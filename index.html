@@ -6,12 +6,12 @@
   <meta name="theme-color" content="#11121A">
   <meta name="color-scheme" content="dark">
   <title>Feelime — 离线优先的 Android 输入法</title>
-  <meta name="description" content="Feelime 是离线优先的开源 Android 输入法。离线拼音、离线语音、剪贴板与常用语，数据不出设备。在线体验真实键盘，下载最新版。">
+  <meta name="description" content="Feelime 是离线优先的开源 Android 输入法：全拼、双拼、T9、笔画与离线语音，词库可自定义，数据不出设备。在线体验真实键盘，下载最新版。">
   <meta property="og:type" content="website">
   <meta property="og:locale" content="zh_CN">
   <meta property="og:url" content="https://feelime.github.io/">
   <meta property="og:title" content="Feelime — 离线优先的 Android 输入法">
-  <meta property="og:description" content="自在输入，数据留在本机。离线拼音与语音、可定制键盘，开源可审计。">
+  <meta property="og:description" content="自在输入，数据留在本机。拼音、笔画、语音全离线，键盘词库可定制，开源可审计。">
   <meta property="og:image" content="https://feelime.github.io/assets/social-preview.png">
   <meta property="og:image:width" content="1280">
   <meta property="og:image:height" content="640">
@@ -254,6 +254,7 @@
       <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="2" width="6" height="13" rx="3"></rect><path d="M5 10v2a7 7 0 0 0 14 0v-2m-7 9v3m-4 0h8"></path></symbol>
       <symbol id="i-shield" viewBox="0 0 24 24"><path d="m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6l8-3Z"></path><path d="m8 12 3 3 5-6"></path></symbol>
       <symbol id="i-clipboard" viewBox="0 0 24 24"><rect x="8" y="2" width="8" height="4" rx="1"></rect><path d="M8 4H5a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1V5a1 1 0 0 0-1-1h-3M8 11h8m-8 4h6"></path></symbol>
+      <symbol id="i-book" viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></symbol>
       <symbol id="i-theme" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"></circle><path d="M12 4v16" fill="none"></path><path d="M12 4a8 8 0 0 1 0 16Z" fill="currentColor" stroke="none"></path></symbol>
       <symbol id="i-update" viewBox="0 0 24 24"><path d="M20 7a9 9 0 0 0-15-2L2 8m0-5v5h5m-3 9a9 9 0 0 0 15 2l3-3m0 5v-5h-5"></path></symbol>
       <symbol id="i-code" viewBox="0 0 24 24"><path d="m7 6-6 6 6 6m10-12 6 6-6 6m-3-15-4 18"></path></symbol>
@@ -275,10 +276,10 @@
   </header>
   <main id="main">
     <section class="hero container" aria-labelledby="hero-title">
-      <a class="release-link" data-release-href href="https://github.com/feelime/feelime/releases/latest"><b data-release-version>v1.0.2</b><span>从这里，开始自在输入</span><svg class="icon" aria-hidden="true"><use href="#i-arrow"></use></svg></a>
+      <a class="release-link" data-release-href href="https://github.com/feelime/feelime/releases/latest"><b data-release-version>v1.0.21</b><span>从这里，开始自在输入</span><svg class="icon" aria-hidden="true"><use href="#i-arrow"></use></svg></a>
       <div class="hero-brand"><img class="hero-logo" src="assets/feelime-logo.svg" width="104" height="104" alt="Feelime 标志"><h1 id="hero-title">feelime<span class="cursor" aria-hidden="true"></span></h1></div>
       <p class="hero-tagline">自在输入，数据留在本机。</p>
-      <p class="hero-description">拼音与语音，离线也能用。<br>一款开源、可定制的 Android 输入法。</p>
+      <p class="hero-description">拼音、双拼、T9、笔画与语音，离线也能用。<br>一款开源、可定制的 Android 输入法。</p>
       <div class="hero-actions">
         <a class="button button-primary" data-release-href href="https://github.com/feelime/feelime/releases/latest"><svg class="icon" aria-hidden="true"><use href="#i-download"></use></svg>下载 APK</a>
         <a class="button button-secondary" href="#preview">在线体验<svg class="icon" aria-hidden="true"><use href="#i-arrow"></use></svg></a>
@@ -320,21 +321,23 @@
     <section class="features-section container" id="features" aria-labelledby="features-title">
       <div class="features-heading"><div><p class="section-label">日常所需，认真做好</p><h2 class="section-heading" id="features-title">小小键盘，装下你的习惯。</h2></div><p>从顺手的拼音到随口的语音，<br>让输入贴近你，让数据留在身边。</p></div>
       <div class="feature-grid">
-        <article class="feature-card"><svg class="icon" aria-hidden="true"><use href="#i-keyboard"></use></svg><h3>拼音，离线照常打</h3><p>基于 librime 中文引擎，支持全拼、双拼输入。不想再见到的候选热词，随手删除。</p><span class="feature-caption">librime · 全拼 / 双拼</span></article>
+        <article class="feature-card"><svg class="icon" aria-hidden="true"><use href="#i-keyboard"></use></svg><h3>拼音，离线照常打</h3><p>基于 librime 中文引擎，全拼、双拼、九宫格 T9、笔画都能打；候选带中文联想，打到一半帮你接下一句。</p><span class="feature-caption">librime · 全拼 / 双拼 / T9 / 笔画</span></article>
         <article class="feature-card"><svg class="icon" aria-hidden="true"><use href="#i-mic"></use></svg><h3>想到什么，就说出来</h3><p>语音在设备上识别，边说边出字，再做整句纠错。下载模型后即可离线使用，录音不上传。</p><span class="feature-caption">sherpa-onnx · 本地识别</span></article>
-        <article class="feature-card"><svg class="icon" aria-hidden="true"><use href="#i-clipboard"></use></svg><h3>少打一点，快一点</h3><p>复制过的内容、经常说的话，收在剪贴板与常用语面板。需要时点一下，省去重复输入。</p><span class="feature-caption">剪贴板 / 常用语</span></article>
-        <article class="feature-card"><svg class="icon" aria-hidden="true"><use href="#i-theme"></use></svg><h3>按你的手感来</h3><p>深浅主题、横竖屏、可调键盘高度。手势输入更顺手，Ctrl / Fn / Win 支持粘滞组合。</p><span class="feature-caption">主题 / 手势 / 控制键</span></article>
-        <article class="feature-card"><svg class="icon" aria-hidden="true"><use href="#i-update"></use></svg><h3>键盘，随时焕新</h3><p>键盘界面支持独立热更新，无需重装应用。更新包经过 Ed25519 数字签名校验，确认来源与完整性。</p><span class="feature-caption">HTML / CSS / JS · 签名更新</span></article>
-        <article class="feature-card"><svg class="icon" aria-hidden="true"><use href="#i-code"></use></svg><h3>每一行，都看得见</h3><p>应用与键盘源码开放，代码可检查、可修改。欢迎带着问题、想法或代码，一起完善 Feelime。</p><span class="feature-caption">Kotlin + WebView · 开源</span></article>
+        <article class="feature-card"><svg class="icon" aria-hidden="true"><use href="#i-clipboard"></use></svg><h3>少打一点，快一点</h3><p>复制过的内容、经常说的话，收在剪贴板与常用语面板；打 date、riqi，当前日期时间直接进候选。</p><span class="feature-caption">剪贴板 / 常用语 / 日期候选</span></article>
+        <article class="feature-card"><svg class="icon" aria-hidden="true"><use href="#i-book"></use></svg><h3>词库，由你做主</h3><p>支持导入 rime 词库（.dict.yaml），也能在本机整套换装社区词库；常用语简码、候选符号随心加。</p><span class="feature-caption">rime 词库 · 导入 / 换装</span></article>
+        <article class="feature-card"><svg class="icon" aria-hidden="true"><use href="#i-theme"></use></svg><h3>按你的手感来</h3><p>深浅主题、键盘高度与字号可调，单手模式、按键声音振动；手势输入与 Ctrl / Fn / Win 粘滞组合都在。</p><span class="feature-caption">主题 / 单手 / 控制键</span></article>
+        <article class="feature-card"><svg class="icon" aria-hidden="true"><use href="#i-code"></use></svg><h3>每一行，都看得见</h3><p>应用与键盘源码开放（GPL-3.0），键盘还能独立热更新，不重装应用也能焕新。欢迎带着想法或代码一起来。</p><span class="feature-caption">GPL-3.0 · 开源</span></article>
       </div>
       <div class="open-source"><p><svg class="icon" aria-hidden="true"><use href="#i-code"></use></svg>好用的输入法，也应该让人放心。</p><a class="text-link" href="https://github.com/feelime/feelime">到 GitHub 看看<svg class="icon" aria-hidden="true"><use href="#i-external"></use></svg></a></div>
     </section>
 
     <section class="download-section" id="download" aria-labelledby="download-title">
       <div class="download-layout container">
-        <div class="download-copy"><p class="section-label">开始使用</p><h2 class="section-heading" id="download-title">下一句话，<br>用 Feelime 输入。</h2><p>下载 Android 安装包，在应用内下载所需模型。<br>准备好后，就可以自在地离线输入了。</p></div>
+        <div class="download-copy"><p class="section-label">开始使用</p><h2 class="section-heading" id="download-title">下一句话，<br>用 Feelime 输入。</h2><p>两个安装包任选：thin 精简，语音模型在应用内按需下载；full 内置模型，装好即用。<br>准备好后，就可以自在地离线输入了。</p></div>
         <div class="download-options">
-          <a class="download-card" data-release-href href="https://github.com/feelime/feelime/releases/latest" aria-label="前往 GitHub Release 下载 Feelime 最新版 thin APK"><svg class="icon icon-solid" aria-hidden="true"><use href="#i-github"></use></svg><div><h3>GitHub Release<span class="version-tag" data-release-version>v1.0.2</span></h3><p>thin APK · 64MB · 模型在应用内下载</p></div><svg class="icon" aria-hidden="true"><use href="#i-download"></use></svg></a>
+          <a class="download-card" data-release-href href="https://github.com/feelime/feelime/releases/latest" aria-label="前往 GitHub Release 查看 Feelime 全部版本与更新日志"><svg class="icon icon-solid" aria-hidden="true"><use href="#i-github"></use></svg><div><h3>GitHub Release<span class="version-tag" data-release-version>v1.0.21</span></h3><p>最新版本与更新日志都在这里</p></div><svg class="icon" aria-hidden="true"><use href="#i-arrow"></use></svg></a>
+          <a class="download-card" data-release-asset="thin" href="https://github.com/feelime/feelime/releases/latest" aria-label="直接下载 Feelime thin APK"><svg class="icon" aria-hidden="true"><use href="#i-download"></use></svg><div><h3>thin APK · <span data-release-size="thin">69MB</span></h3><p>语音模型在应用内按需下载</p></div><svg class="icon" aria-hidden="true"><use href="#i-arrow"></use></svg></a>
+          <a class="download-card" data-release-asset="full" href="https://github.com/feelime/feelime/releases/latest" aria-label="直接下载 Feelime full APK"><svg class="icon" aria-hidden="true"><use href="#i-download"></use></svg><div><h3>full APK · <span data-release-size="full">336MB</span></h3><p>内置离线语音模型，装好即用</p></div><svg class="icon" aria-hidden="true"><use href="#i-arrow"></use></svg></a>
           <div class="download-card unavailable" aria-disabled="true"><svg class="icon" aria-hidden="true"><use href="#i-play"></use></svg><div><h3>Google Play</h3><p>稍后也能在这里找到我们</p></div><span class="coming-soon">即将上线</span></div>
         </div>
       </div>
@@ -358,6 +361,17 @@
     document.querySelectorAll('[data-release-version]').forEach((el) => {
       el.textContent = data.tag_name;
     });
+    // thin/full 直链：按文件名后缀在 assets 里找，拿不到就保持 releases/latest。
+    document.querySelectorAll('[data-release-asset]').forEach((el) => {
+      const asset = (data.assets || []).find(
+          a => a.name.endsWith('-' + el.dataset.releaseAsset + '.apk'));
+      if (asset) el.href = asset.browser_download_url;
+    });
+    document.querySelectorAll('[data-release-size]').forEach((el) => {
+      const asset = (data.assets || []).find(
+          a => a.name.endsWith('-' + el.dataset.releaseSize + '.apk'));
+      if (asset) el.textContent = Math.round(asset.size / 1048576) + 'MB';
+    });
   } catch (_) { /* 保持 releases/latest 兜底链接 */ }
 })();
 // 部署缓存标记：本次访问的所有键盘资源使用相同时间戳。
@@ -369,6 +383,11 @@ const stage = document.getElementById('stage');
 const logBody = document.getElementById('logBody');
 const entries = [];
 let keyboardMode = 'pinyin'; // 假引擎当前键盘（桥 hello 下发）
+// 快捷设置方块的回读状态（真机由原生偏好下发；setQuickPref 在这里
+// 模拟落盘并重推 hello，方块状态即可回读）。与 tools/keyboard-preview.html 同步。
+let previewPrefs = { associationOn: true, keySound: false, keyHaptic: false,
+    candidateFont: 0, holdMs: 350, popupSnap: 1, dpScheme: 'ziranma',
+    oneHand: 0, sideContent: 0, uiLanguage: 'zh' };
 
 function log(method, detail) {
     const div = document.createElement('div');
@@ -395,6 +414,13 @@ const FAKE_CANDS = {
 let rawInput = '';
 let revision = 0;
 let deletedHead = null; // 删除自造词后的假引擎状态
+/* T9/笔画演示词表：只覆盖最常见的几手输入，其余走占位候选。 */
+const T9_CANDS = {
+    '64426': ['你好', '你号'], '9426': ['先', '现', '线'], '26': ['安', '按'],
+};
+const STROKE_CANDS = {
+    h: ['一'], hh: ['二'], hhh: ['三'], pn: ['人'], hspn: ['木'], hhsh: ['王'],
+};
 
 
 function pushEngineState(raw, composing) {
@@ -468,6 +494,8 @@ function fakeCandidates(raw) {
     const key = raw.replace(/ /g, '').replace(/'/g, '');
     const table = FAKE_CANDS[key];
     if (table) return table.slice();
+    if (keyboardMode === 't9') return (T9_CANDS[key] || [key + '（T9 演示）']).slice();
+    if (keyboardMode === 'stroke') return (STROKE_CANDS[key] || [key + '（笔画演示）']).slice();
     if (keyboardMode === 'double-pinyin') {
         const all = [];
         doublePinyinToPinyin(raw).forEach(py => {
@@ -535,9 +563,12 @@ function makeBridge() {
             setTimeout(pushHello, 0);
         },
         key(char) {
-            const viaEngine = keyboardMode.includes('pinyin');
+            // T9 键面发数字（分词键发 '）、笔画发 h/s/p/n/z（通配符 *）。
+            const viaEngine = keyboardMode.includes('pinyin') || keyboardMode === 't9'
+                || keyboardMode === 'stroke';
+            const viaKey = keyboardMode === 't9' ? /[0-9']/ : /[a-z'*]/;
             log('key', esc(char) + (viaEngine ? ' <span class="dim">→ 引擎</span>' : ''));
-            if (viaEngine && /[a-z']/.test(char)) {
+            if (viaEngine && viaKey.test(char)) {
                 rawInput += char;
                 pushEngineState(rawInput, true);
             } else if (!viaEngine) {
@@ -677,6 +708,26 @@ function makeBridge() {
         switchInputMethod() { log('switchInputMethod', '<span class="dim">→ 系统 IME picker</span>'); },
         hideKeyboard() { log('hideKeyboard', ''); },
         openSetup() { log('openSetup', ''); },
+        setQuickPref(key, value) {
+            log('setQuickPref', `${esc(String(key))}=${esc(String(value))} <span class="dim">→ 重推 hello</span>`);
+            if (key === 'uiLocale') {
+                // 原生 UiLanguage 落盘：hello 带回选择值 + 解析后的 locale。
+                previewPrefs.uiLanguage = value;
+                document.getElementById('previewLocale').value = value === 'auto' ? 'zh' : value;
+                setTimeout(pushHello, 0);
+                return;
+            }
+            const map = { association: 'associationOn', keySound: 'keySound',
+                keyHaptic: 'keyHaptic', candidateFont: 'candidateFont',
+                oneHand: 'oneHand', sideContent: 'sideContent',
+                holdMs: 'holdMs', popupSnap: 'popupSnap', dpScheme: 'dpScheme' };
+            const slot = map[key];
+            if (!slot) return;
+            previewPrefs[slot] = value === '1' || value === '0'
+                ? value === '1'
+                : (Number.isNaN(Number(value)) ? value : Number(value));
+            setTimeout(pushHello, 0);
+        },
         reloadKeyboard() { log('reloadKeyboard', ''); },
         commitText(text) {
             log('commitText', esc(text));
@@ -760,6 +811,8 @@ function pushHello() {
         orientation: landscape ? 'landscape' : 'portrait',
         // 手势条避让（真机由原生下发 px；预览默认 0）。
         safeBottom: previewSafeBottom,
+        // 键盘底部留白（真机由 hello 下发；预览固定 0）。
+        bottomPad: 0,
         // Match native floatBandPx: landscape 30%, portrait 40%, capped at 200dp.
         floatBand: Math.min(200, Math.floor(frame.clientHeight * (landscape ? 0.3 : 0.4))),
         // Height-card drag range, same semantics as the native clamp
@@ -771,7 +824,18 @@ function pushHello() {
         pageGenerationToken: 'tok-1',
         mode: keyboardMode,
         engineDataReady: { pinyin: true, 'double-pinyin': true, japanese: true,
-            french: true, russian: true },
+            french: true, russian: true, t9: true, stroke: true },
+        // 键盘侧偏好（真机由原生 hello 下发；预览由 setQuickPref 模拟落盘）。
+        uiLanguage: previewPrefs.uiLanguage,
+        associationOn: previewPrefs.associationOn,
+        keySound: previewPrefs.keySound,
+        keyHaptic: previewPrefs.keyHaptic,
+        candidateFont: previewPrefs.candidateFont,
+        oneHand: previewPrefs.oneHand,
+        sideContent: previewPrefs.sideContent,
+        holdMs: previewPrefs.holdMs,
+        popupSnap: previewPrefs.popupSnap,
+        dpScheme: previewPrefs.dpScheme,
     });
 }
 

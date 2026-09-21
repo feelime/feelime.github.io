@@ -10,16 +10,23 @@
  * (html.theme-light / html.theme-dark). */
 :root {
     color-scheme: dark;
+    /* 键帽不透明度滑块（外观页）：--key/--special/--pressed 由 rgb 基色
+     * + alpha 合成，JS 只调 --key-alpha（0-1），键帽文字保持实色。 */
+    --key-rgb: 95 95 95;
+    --special-rgb: 65 65 65;
+    --pressed-rgb: 110 110 110;
+    --key-alpha: 1;
     --bg: #202020;
-    --key: #5f5f5f;
-    --special: #414141;
-    --pressed: #6e6e6e;
+    --key: rgb(var(--key-rgb) / var(--key-alpha));
+    --special: rgb(var(--special-rgb) / var(--key-alpha));
+    --pressed: rgb(var(--pressed-rgb) / var(--key-alpha));
     --text: #e8e8e8;
     --muted: #b0b0b0;
     --accent: #23c890;
     --danger: #ff6b6b;
     --recording: #ff4d4d;
     --panel: #2a2a2a;
+    --panel-rgb: 42 42 42;
     --pill: #3d3d3d;
     --logo-bg: #4d4d4d;
     --icon: #989898;
@@ -38,10 +45,13 @@
 
 html.theme-light {
     color-scheme: light;
+    --key-rgb: 252 252 252;
+    --special-rgb: 183 187 196;
+    --pressed-rgb: 236 238 242;
     --bg: #e2e3e8;
-    --key: #fcfcfc;
-    --special: #b7bbc4;
-    --pressed: #eceef2;
+    --key: rgb(var(--key-rgb) / var(--key-alpha));
+    --special: rgb(var(--special-rgb) / var(--key-alpha));
+    --pressed: rgb(var(--pressed-rgb) / var(--key-alpha));
     --text: #181818;
     /* The old #b0b0b0 sat at ~2.1:1 on the light surfaces -
      * quick-settings text was effectively invisible. #5c616b keeps the
@@ -53,6 +63,7 @@ html.theme-light {
     --danger: #d93025;
     --recording: #e5484d;
     --panel: #f4f5f7;
+    --panel-rgb: 244 245 247;
     --pill: #ffffff;
     --logo-bg: #fcfcfc;
     --icon: #787878;
@@ -74,16 +85,20 @@ html.theme-dark {
 @media (prefers-color-scheme: light) {
     html:not(.theme-light):not(.theme-dark) {
         color-scheme: light;
+        --key-rgb: 252 252 252;
+        --special-rgb: 183 187 196;
+        --pressed-rgb: 236 238 242;
         --bg: #e2e3e8;
-        --key: #fcfcfc;
-        --special: #b7bbc4;
-        --pressed: #eceef2;
+        --key: rgb(var(--key-rgb) / var(--key-alpha));
+        --special: rgb(var(--special-rgb) / var(--key-alpha));
+        --pressed: rgb(var(--pressed-rgb) / var(--key-alpha));
         --text: #181818;
         --muted: #5c616b; /* See html.theme-light */
         --accent: #23c890;
         --danger: #d93025;
         --recording: #e5484d;
         --panel: #f4f5f7;
+        --panel-rgb: 244 245 247;
         --pill: #ffffff;
         --logo-bg: #fcfcfc;
         --icon: #787878;
@@ -125,7 +140,12 @@ button { font: inherit; }
     right: 0;
     bottom: 0;
     height: calc(100% - var(--band, 0px));
-    padding: 14px 4px calc(5px + var(--safe-bottom, 0px));
+    /* Top padding hosts the composing preedit band (issue #8); the band
+     * grows with the user's preedit font level AND with vendor font
+     * metrics (18px base covers a CJK line box at 13px). layoutChrome()
+     * mirrors the same growth so the row budget shrinks instead of
+     * overflowing. */
+    padding: var(--preedit-band, 18px) 4px calc(5px + var(--safe-bottom, 0px) + var(--kb-bottom-pad, 0px));
     background: var(--bg);
     /* clip, not hidden: a focused editor-strip input auto-SCROLLS a
        hidden-overflow container (programmatic scroll), shoving every
@@ -142,39 +162,317 @@ button { font: inherit; }
 /* D: --safe-bottom (native gesture-nav inset, CSS px) lifts the
  * rows above the gesture strip in both orientations; the keyboard background
  * fills the gap. */
-body.landscape #softKeyboard { padding: 4px 4px calc(4px + var(--safe-bottom, 0px)); }
+body.landscape #softKeyboard { padding: 4px 4px calc(4px + var(--safe-bottom, 0px) + var(--kb-bottom-pad, 0px)); }
+
+/* Engine lifecycle notice (mode-fallback §2.3): fills the candidate
+ * slot while the engine warms up ("正在准备语言数据…") or a degrade
+ * fallback serves ("「双拼」暂以英文直出…"). Hidden otherwise. */
+/* The status strip REPLACES the candidate bar's slot while visible (the JS
+ * sets candidates.hidden in step) — two flex:1 strips side by side would
+ * squeeze and clip each other on narrow screens. */
+#engineStatus {
+    flex: 1;
+    min-width: 0;
+    min-height: 40px;
+    /* Block (not flex): text-overflow does not ellipsize a flex container's
+     * anonymous text child - the message clipped at both ends with no
+     * ellipsis (round-4 review). line-height centers it. */
+    display: block;
+    line-height: 40px;
+    text-align: center;
+    font-size: 14px;
+    color: var(--text);
+    opacity: .7;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+#engineStatus[hidden] { display: none; }
+#candidates[hidden] { display: none; }
+body.landscape #engineStatus { min-height: 40px; }
+/* Degraded fallback: a small '!' pinned to the mode toggle (persistent
+ * state comes from hello/events; tapping the toggle retries the failed
+ * mode). */
+#modeToggle.degraded::after {
+    content: '!';
+    position: absolute;
+    top: 1px;
+    right: 1px;
+    min-width: 14px;
+    height: 14px;
+    line-height: 14px;
+    border-radius: 7px;
+    background: #c62828;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 700;
+    text-align: center;
+}
 /* The landscape bar grew (26 -> 40) and moved DOWN (margin-top
  * 2 -> 14) so the pinyin preedit line (0-14px) no longer overlaps the
  * candidates; applyHeight() reserves 78px for the landscape chrome. */
-body.landscape #candidateBar { height: 40px; margin-top: 14px; margin-bottom: 4px; }
+body.landscape #candidateBar { height: 40px; margin-top: var(--preedit-band, 18px); margin-bottom: 4px; }
 body.landscape #candidateBar .tool,
 body.landscape #settingsPageBar .tool { width: 30px; height: 30px; }
 body.landscape #candidates { min-height: 40px; }
-body.landscape .candidate { height: 40px; line-height: 40px; font-size: 16px; }
+body.landscape .candidate { min-height: 40px; line-height: normal; font-size: calc(16px * var(--cand-font-scale, 1)); display: flex; align-items: center; }
 body.landscape .kb-row { gap: 4px; margin-bottom: 3px; }
 body.landscape #symCatBar { margin-top: 3px; gap: 4px; }
 
-/* Composing preedit floats over the top padding; the keyboard height never
- * changes between idle and composing. */
-/* The candidate bar moved down (margin-top), so the pinyin
- * line no longer overlaps it. */
+/* Composing preedit（issue #8 定稿）：拼音悬浮在顶部 padding 带里
+ * （1.0.13 形态），字号可在设置里三档调整（--preedit-font-scale）。
+ * 带高不再用固定行高：真机厂商字体（OPPO Sans 等）行盒明显大于
+ * Noto，固定 height/line-height 会把 g/j 的下缘裁掉。改为
+ * line-height:normal + min-height=--preedit-band（按档位给足 CJK
+ * 行盒，18/22/25px），顶部 padding / 横屏 bar margin-top 用同一个
+ * 变量让位，行高预算由 layoutChrome() 按档位同步收缩。 */
 #preeditLine {
     display: none;
     position: absolute;
     top: 0;
     left: 8px;
-    height: 14px;
-    line-height: 14px;
+    min-height: var(--preedit-band, 18px);
     max-width: calc(100% - 16px);
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
+    align-items: center;
     /* Raw pinyin must be legible at a glance (review note b). */
-    font-size: 13px;
+    font-size: calc(13px * var(--preedit-font-scale, 1));
+    line-height: normal;
     color: var(--text);
     z-index: 5;
 }
-body.composing #preeditLine { display: block; }
+body.composing #preeditLine { display: flex; }
+
+/* ===== 单手模式（issue #15）=====
+ * body[data-one-hand="left"|"right"] 时 #softKeyboard 用同侧 padding 让位
+ * （键区贴 left/right），#sidePad absolute 贴另一侧、占满整个让位条
+ * （拼音带 + 候选条 + 键区的全高——工具栏旁的空白一并利用，键更高），
+ * bottom 对齐键区底（不含 safe area 与底部留白，不与系统手势条冲突）。
+ * 拼音带在右手模式跟随键区贴右。侧边内容 body[data-side-content] 三态。 */
+#sidePad {
+    position: absolute;
+    top: 0;
+    bottom: calc(5px + var(--safe-bottom, 0px) + var(--kb-bottom-pad, 0px));
+    width: var(--side-pad-w, 64px);
+    display: none;
+    z-index: 4;
+}
+/* off 态显式兜底（display:none 由 data-one-hand 完全驱动，JS 不碰 hidden）。 */
+body[data-one-hand="off"] #sidePad { display: none; }
+body[data-one-hand="left"] #softKeyboard { padding-right: var(--side-pad-w, 64px); }
+body[data-one-hand="left"] #sidePad { display: block; right: 0; }
+body[data-one-hand="right"] #softKeyboard { padding-left: var(--side-pad-w, 64px); }
+body[data-one-hand="right"] #sidePad { display: block; left: 0; }
+/* 拼音带跟随候选条起点（issue #15 真机反馈）：右手模式候选条从侧边条
+ * 右侧开始，拼音带贴到同一位置上方，与第一个候选词保持视觉关联——
+ * 不跟键区右缘（那会和候选脱节）。 */
+body[data-one-hand="right"] #preeditLine { left: calc(var(--side-pad-w, 64px) + 8px); right: auto; }
+/* 工具按钮在缩窄的候选条里临界溢出（8 键 + gap 会顶进侧边条）：单手
+ * 模式下收紧行间距。 */
+body[data-one-hand] #candidateBar { gap: 5px; }
+/* 收起键/设置键贴着让位边界时与侧边栏视觉压边（真机截图回归）。
+ * 用容器 padding 内收：margin-right 对最后一个 flex 项无效（不改变
+ * 自身位置），hide 是末项、setup 是首项，padding 两侧各留 8px 缝。 */
+body[data-one-hand="left"] #candidateBar { padding-right: 8px; }
+body[data-one-hand="right"] #candidateBar { padding-left: 8px; }
+
+/* ===== 工具栏编辑模式（issue #15）=====
+ * 长按候选条任意可编辑工具进入；键区被 #toolbarEditor（未上栏 icon
+ * 仓库，右上角 + 角标，点按添加）替换；候选条内可编辑 icon 右上角
+ * 出现 ×（点按移除到仓库），长按拖动可在左/右两组内与组间排序。 */
+#toolbarEditor {
+    flex: 1;
+    display: none;
+    flex-direction: column;
+    min-height: 0;
+    padding: 4px 6px;
+    background: var(--bg);
+}
+#toolbarEditor[hidden] { display: none; }
+body.toolbar-edit #toolbarEditor { display: flex; }
+/* 背景图开启时编辑区同样透出图（与快捷设置面板一致）；仓库格子
+ * 自带 #ffffff18 底 + 按钮描边，图上仍可辨识。 */
+body[data-bg-image="on"] #toolbarEditor { background: transparent; }
+body.toolbar-edit #qwertyLayer,
+body.toolbar-edit #symbolLayer,
+body.toolbar-edit #numPadLayer { display: none; }
+/* 模式切换用 hidden 属性;显式兜底防止 author display 覆盖 hidden。 */
+#qwertyLayer[hidden] { display: none; }
+#symbolLayer[hidden] { display: none; }
+#numPadLayer[hidden] { display: none; }
+.tbe-head { display: flex; align-items: center; gap: 10px; padding: 2px 4px 8px; }
+.tbe-title { font-size: 15px; font-weight: 650; color: var(--text); }
+.tbe-hint { flex: 1; font-size: 11px; color: var(--muted); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.tbe-done {
+    flex: none;
+    border: 0;
+    border-radius: 8px;
+    background: var(--accent, #18ad7c);
+    color: #fff;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 6px 14px;
+}
+.tbe-cancel {
+    flex: none;
+    border: 1px solid var(--pill, #ffffff2e);
+    border-radius: 8px;
+    background: transparent;
+    color: var(--muted, #999);
+    font-size: 13px;
+    font-weight: 600;
+    padding: 5px 12px;
+}
+#toolbarEditorGrid {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-content: flex-start;
+    padding: 8px;
+    border-radius: 10px;
+    /* 固定半透明白：不能用 --pill（浅色 #fff/深色 #3d3d3d），否则容器
+     * 和圆钮同色，按钮融进背景只剩 + 角标（preview 实测）。 */
+    background: #ffffff18;
+    overflow-y: auto;
+}
+/* 仓库里的按钮恢复圆形工具样式（.tool 的圆钮样式挂在
+ * #candidateBar .tool 下，仓库里不生效，这里独立给全）+ 右上角 +
+ * 角标（点按整钮即添加）。 */
+#toolbarEditorGrid .tool {
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: var(--pill);
+    color: var(--icon);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    /* 容器底色与圆钮在两个主题下都可能接近，靠阴影给轮廓。 */
+    box-shadow: 0 1px 4px #0003;
+}
+#toolbarEditorGrid .tool.editor-pool { position: relative; }
+#toolbarEditorGrid .tool.editor-pool::after {
+    content: '+';
+    position: absolute;
+    top: -4px;
+    right: -4px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--accent, #18ad7c);
+    color: #fff;
+    font-size: 13px;
+    line-height: 16px;
+    text-align: center;
+    font-weight: 700;
+}
+/* 候选条编辑态：可编辑 icon 右上角 × 徽章（点按移除）；非编辑态隐藏
+ * 且不参与按钮 flex 布局。 */
+.tool-x { display: none; }
+body.toolbar-edit #candidateBar .tool[data-tool] {
+    position: relative;
+    /* × 伸出按钮顶边 5px，左组紧邻候选区（DOM 靠后=绘制在上）时会被
+     * 盖住点不到——编辑态把工具抬到候选区之上。 */
+    z-index: 2;
+}
+body.toolbar-edit #candidateBar .tool[data-tool] .tool-x {
+    display: block;
+    position: absolute;
+    top: -5px;
+    right: -5px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #c62828;
+    color: #fff;
+    font-size: 12px;
+    line-height: 16px;
+    text-align: center;
+    font-weight: 700;
+    z-index: 2;
+}
+/* 拖拽中的按钮浮起、原位置半透明。ghost 是独立的圆形浮钮——
+ * clone 出来的 .tool 在 body 下没有候选条的圆钮样式，这里给全，
+ * 并把 × 藏掉（编辑态的徽章跟着 clone 会一起出来）。 */
+.tool.toolbar-dragging { opacity: 0.35; }
+.tool.toolbar-drag-ghost {
+    position: fixed;
+    z-index: 60;
+    pointer-events: none;
+    border: 0;
+    padding: 0;
+    border-radius: 50%;
+    background: var(--pill);
+    color: var(--icon);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 6px 16px #0007;
+}
+.tool.toolbar-drag-ghost .tool-x { display: none; }
+#sideGrid {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    height: 100%;
+    box-sizing: border-box;
+    padding: 3px;
+}
+/* 方向行（上 / 左右 / 下）：左右行是高频主键，高度 +30%；其余行
+   （▲ / ▼ / 四个编辑键）等高（issue #15 定稿微调）。 */
+.side-row { display: flex; gap: 3px; flex: 1; min-height: 0; }
+.side-row.side-row-mid { flex: 1.3; }
+.side-key {
+    flex: 1;
+    min-height: 0;
+    border: 0;
+    border-radius: var(--radius-key);
+    background: var(--key);
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 550;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+}
+.side-row .side-key { min-width: 0; }
+.side-key:active { background: var(--pressed); }
+/* 编辑键：icon+文字横排（纯 icon 语义不明确），四键等高。 */
+.side-key.side-labeled { gap: 5px; justify-content: center; }
+.side-key.side-labeled span { font-size: 11px; font-weight: 550; line-height: 1; }
+/* 侧边内容两态：blank 收起键簇。 */
+body[data-side-content="blank"] #sideGrid { display: none; }
+
+/* ===== 背景图片（原「侧边图片」升级） =====
+ * 铺满整个键盘区域（工具条到底部留白；float band 扩展透明区在
+ * WebView 之外，天然不覆盖）。on 时根背景转透明，键帽/候选 pill
+ * 保持实色浮在图上（键盘皮肤形态）。 */
+#softKeyboard { isolation: isolate; }
+#bgImage {
+    position: absolute;
+    inset: 0;
+    /* 负 z-index:画在容器背景之上、键区等普通流内容之下（z-index:0
+     * 的定位元素会画到普通流之上，把键全盖住）。isolate 把 context
+     * 锁在 softKeyboard 内，图不会沉到键盘窗口之外。 */
+    z-index: -1;
+    display: none;
+    background-size: cover;
+    background-position: center;
+    pointer-events: none;
+}
+body[data-bg-image="on"] #bgImage { display: block; }
+body[data-bg-image="on"] #softKeyboard { background: transparent; }
+/* 拼音加粗（issue #8）：设置开关，默认关。 */
+body[data-preedit-bold="1"] #preeditLine { font-weight: 600; }
+body[data-preedit-font="large"] { --preedit-font-scale: 1.2; --preedit-band: 22px; }
+body[data-preedit-font="xlarge"] { --preedit-font-scale: 1.35; --preedit-band: 25px; }
 
 /* ===== Candidate / tool bar ===== */
 #candidateBar {
@@ -204,6 +502,20 @@ body.composing #preeditLine { display: block; }
     justify-content: center;
 }
 #candidateBar .tool:active, #candidateBar .tool.active-touch { background: var(--pressed); }
+/* 开关型工具（振动/声音/联想/单手）：开着时点亮。色彩模式是三态
+ * 循环无开/关语义，syncToolStates 不再给它挂 state-on。
+ * 底色用 active 深绿（mic listening / ctrl active 同配方）、icon 走
+ * accent——之前的实心亮绿 + 纯白 icon 在暗色键盘里像颗灯泡（真机
+ * 截图定罪）。快捷设置 tile 的 on 也只是 icon 变绿，语义统一。 */
+#candidateBar .tool.state-on,
+#toolbarEditorGrid .tool.state-on {
+    /* 开 = icon 变 accent + 一圈细描边，底色不动——大色块（实心绿/
+     * 深绿底）在暗色键区里两次被用户点名刺眼；快捷设置 tile 的 on
+     * 也只是 icon 变绿，两处语义保持一致。 */
+    background: var(--pill, #3d3d3d);
+    color: var(--accent, #23c890);
+    box-shadow: inset 0 0 0 1px var(--accent, #23c890);
+}
 /* Settings sub-page chrome rides the toolbar - back +
  * title on the left, close on the right, all in .tool pill styling; the
  * regular tools (logo, gear, clipboard, favorites, mic, hide, strip) hide
@@ -227,16 +539,12 @@ body.composing #preeditLine { display: block; }
     text-overflow: ellipsis;
 }
 body.settings-page #settingsPageBar { display: flex; }
+/* 子页打开时隐藏所有常规工具——直接子元素级选择器，动态开关工具
+ * （toolTheme 等五个）自动覆盖，新增工具也不会再漏（真机翻车：逐 id
+ * 枚举漏掉动态按钮，「输入法快捷切换」子页标题栏边上挂着一颗色彩
+ * 模式）。settingsPageBar 的 ‹/× 在其内部，不受 > 影响。 */
 body.settings-page #candidates,
-body.settings-page #setupButton,
-body.settings-page #fullSetupButton,
-body.settings-page #ctrlTool,
-body.settings-page #imeSwitchButton,
-body.settings-page #clipboardButton,
-body.settings-page #favoritesButton,
-body.settings-page #mic,
-body.settings-page #hide,
-body.settings-page .compose-tool { display: none; }
+body.settings-page #candidateBar > .tool { display: none; }
 /* [hidden] must win even against the settings-page swap (lint R2). */
 #setupButton[hidden], #fullSetupButton[hidden], #clipboardButton[hidden],
 #favoritesButton[hidden], #hide[hidden], #settingsPageBar[hidden],
@@ -274,15 +582,31 @@ body.settings-page .compose-tool { display: none; }
 #candidates::-webkit-scrollbar { display: none; }
 .candidate {
     flex: none;
-    height: 34px;
+    /* 垂直布局防弹化（issue #8 真机反馈）：厂商 CJK 字体（OPPO Sans 等）
+     * 的行高 metrics 明显大于 Noto，固定 height+line-height 会在手机
+     * 浏览器/大字号下把 descender（g/j/y）下缘裁掉、下方却留白。改为
+     * min-height + flex 居中 + line-height:normal，行盒随字体自适应，
+     * 药丸在候选条（40px，overflow hidden）内始终容得下完整字形。 */
+    min-height: 34px;
     padding: 0 8px;
     border: 0;
     border-radius: 8px;
     background: transparent;
     color: var(--text);
-    font-size: 17px;
-    line-height: 34px;
+    font-size: calc(17px * var(--cand-font-scale, 1));
+    line-height: normal;
+    display: flex;
+    align-items: center;
 }
+
+/* 联想词（docs/design/association.md）：与引擎候选同尺寸同配色。
+ * 用户定稿（2026-09-20）：不做任何「这是联想」的降调标识——不加灰字、
+ * 不加圆点/角标，样式全部继承 .candidate。class 名保留供测试定位。 */
+
+/* 候选字号档位（issue #2）：hello 带来的 body[data-cand-font] 只缩放
+ * 文字，不动 34px 行高预算（扩到 2 档以上会挤压行高，另行设计）。 */
+body[data-cand-font="large"] { --cand-font-scale: 1.2; }
+body[data-cand-font="xlarge"] { --cand-font-scale: 1.35; }
 .candidate:active, .candidate.active-touch { background: var(--pressed); }
 /* First candidate: accent text on a pill (both themes, reference behaviour). */
 .candidate.first { color: var(--accent-text); background: var(--pill); }
@@ -359,6 +683,7 @@ body.settings-page .compose-tool { display: none; }
 .sym-cat {
     flex: none;
     flex: 0 0 auto;
+    position: relative;
     min-width: 52px;
     /* Every key on the symbol layer shares the row height -
      * categories, ABC and enter all track --kb-row-h (was a fixed 44 that
@@ -388,6 +713,25 @@ body.settings-page .compose-tool { display: none; }
     font-weight: 600;
 }
 .sym-cat:active, .sym-cat.active-touch { background: var(--pressed); }
+/* 常用 dual-label: the small 中/En badge sits bottom-right like the
+ * mode toggle's target shorthand (#modeToggle .cn-sub) - same token,
+ * the muted tone read as "missing" on the light theme once. */
+.sym-cat .cat-sub {
+    position: absolute;
+    right: 4px;
+    bottom: 3px;
+    font-size: 9px;
+    font-weight: 400;
+    color: var(--key-subtext);
+}
+/* 方向 category: two text rows top-aligned inside the three-row slot. */
+.sym-arrows {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    gap: 5px;
+}
 /* Single-glyph cells read at near-main-key size - 13px on a
  * 44px cell wasted the key face and hurt digit recognition. */
 .kb-key.sym-single { font-size: min(20px, calc(var(--kb-row-h, 44px) * 0.46)); font-weight: 400; }
@@ -398,8 +742,6 @@ body.settings-page .compose-tool { display: none; }
     white-space: nowrap;
     overflow: hidden;
 }
-/* The key map's second-row indent is a bare spacer (no paint). */
-.kmap-pad { min-width: 0; }
 .sym-blank { flex: 1; min-width: 0; height: var(--kb-row-h, 44px); background: transparent; }
 /* 分词 (syllable separator) rides in the Shift slot of Chinese layouts. */
 .sep { font-size: 14px; font-weight: 500; }
@@ -407,6 +749,248 @@ body.settings-page .compose-tool { display: none; }
 .kb-layer { flex: 1; display: flex; flex-direction: column; justify-content: space-between; }
 #symGrid { flex: 1; display: flex; flex-direction: column; justify-content: space-between; }
 #symGrid .kb-row:last-child { margin-bottom: 0; }
+
+/* ===== 九宫格数字键盘（长按 123，design §2.6）===== */
+#numPadLayer { display: flex; flex-direction: column; }
+#numPadLayer[hidden] { display: none; }
+.num-grid {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: 0.8fr 1.2fr 1.2fr 1.2fr 1fr;
+    grid-template-rows: repeat(4, var(--kb-row-h, 44px));
+    gap: 5px;
+}
+/* Left strip: vertical scroll over plain-click keys - bindTouch's
+ * preventDefault would kill the drag (same lesson as .sym-cat). */
+.num-syms {
+    grid-row: 1 / 4;
+    grid-column: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    overflow-y: auto;
+    touch-action: pan-y;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    -webkit-mask-image: linear-gradient(to bottom, transparent, #000 8px, #000 calc(100% - 8px), transparent);
+    mask-image: linear-gradient(to bottom, transparent, #000 8px, #000 calc(100% - 8px), transparent);
+}
+.num-sym-key {
+    flex: none;
+    height: var(--kb-row-h, 44px);
+    border: 0;
+    border-radius: var(--radius-key);
+    background: var(--special);
+    color: var(--text);
+    font-size: 15px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.num-sym-key:active { background: var(--pressed); }
+/* The back key rides the accent (reference: green, left column bottom). */
+.num-back {
+    grid-row: 4;
+    grid-column: 1;
+    background: var(--accent);
+    color: var(--accent-ink);
+}
+.num-digit { font-size: min(26px, calc(var(--kb-row-h, 44px) * 0.6)); font-weight: 400; }
+.num-fn { font-size: 14px; }
+/* ===== 九宫格 T9（微信式五列键面，preview-t9 定稿） ===== */
+.t9-grid {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: 0.92fr 1fr 1fr 1fr 0.92fr;
+    grid-template-rows: repeat(4, var(--kb-row-h, 44px));
+    gap: 5px;
+}
+/* 左列：常用字符/音节条（native pan-y 滚动，键不 bindTouch——
+ * preventDefault 杀拖动，同 .num-syms 的教训）+ 底部符号面板键。
+ * 显式跨满 4 行——缺了放置声明整列会塌进 r1（截图评审抓到）。 */
+.t9-side {
+    grid-row: 1 / 5;
+    grid-column: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-height: 0;
+    min-width: 0;
+}
+.t9-strip {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    overflow-y: auto;
+    touch-action: pan-y;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+}
+.t9-strip::-webkit-scrollbar { display: none; }
+.t9-side-cell {
+    flex: none;
+    /* 0.74：符号键加高到整行后，音节条竖屏仍刚好放下 4 格（用户要求
+     * 「符号键 = 最后一行高，压缩上面 4 格」）。 */
+    height: calc(var(--kb-row-h, 44px) * 0.74);
+    border: 0;
+    border-radius: var(--radius-key);
+    background: var(--special);
+    color: var(--text);
+    font-size: min(17px, calc(var(--kb-row-h, 44px) * 0.4));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+}
+.t9-side-cell:active { background: var(--pressed); }
+.t9-syl-pre { color: var(--key-subtext); }
+/* flex:none 压住 .kb-key 的默认 flex:1——否则符号键与滚动条平分列高。
+ * 高度 = 最后一行（r4）整行高，底边与 123/mic/中英/换行对齐。 */
+.t9-sym-btn { flex: none; height: var(--kb-row-h, 44px); }
+/* 字母组键：主字形=字母组，右上角标=数字（与空格的 0 角标同款）。 */
+.t9-key { position: relative; }
+.t9-sup {
+    position: absolute;
+    top: 2px;
+    right: 7px;
+    font-size: 10px;
+    color: var(--key-subtext);
+}
+/* 字母组主字形不加重——kb-key 的 550 在大号字母组上显得过粗（用户反馈） */
+.t9-group { font-size: min(20px, calc(var(--kb-row-h, 44px) * 0.46)); font-weight: 400; }
+/* 长按符号角标：左上角小字（issue #9；右上角留给数字角标）。 */
+.t9-hint {
+    position: absolute;
+    top: 2px;
+    left: 5px;
+    font-size: 10px;
+    color: var(--key-subtext);
+    letter-spacing: 1px;
+}
+/* 底行：123 与中英各 2/3 键宽，省出的空间全给 mic/空格（5/3 键宽）。 */
+.t9-r4 { display: flex; gap: 5px; min-width: 0; }
+.t9-r4 .kb-key { flex: 3; min-width: 0; }
+.t9-r4 .t9-narrow { flex: 2; }
+.t9-r4 .t9-wide { flex: 5; }
+/* T9 长按浮层：单行排布（5 格，qwerty 长按的 3 格换行排不适用）。 */
+#keyPopupInner.t9-row { max-width: none; flex-wrap: nowrap; }
+/* T9 三行长按弹层（issue #9）：小写 / 左符号·数字·右符号 / 大写，
+ * 每行一个容器行内居中——符号行 3 格窄于字母行也对齐中轴。整体
+ * 一张卡片（格子换 --key 底色做对比），中行压在工具栏上也不混淆。 */
+#keyPopupInner.t9-grid3 {
+    max-width: none;
+    flex-wrap: nowrap;
+    flex-direction: column;
+    gap: 5px;
+    padding: 6px;
+    border-radius: 12px;
+    background: var(--panel);
+    box-shadow: 0 6px 24px #000c;
+}
+#keyPopupInner.t9-grid3 .kp-row { display: flex; gap: 5px; justify-content: center; }
+#keyPopupInner.t9-grid3 .kp-item { background: var(--key); box-shadow: none; }
+/* 选中格必须压回上面的 ID 优先级覆盖，否则高亮只剩深色文字看不见。 */
+#keyPopupInner.t9-grid3 .kp-item.sel { background: var(--accent); }
+/* 滑出浮层卡片边界时的「松手撤销」提示（showPopupCancelTip 挂在浮层
+ * 上方中线，不跟手）。卡片底色 + 描边：黑底白字在暗色键盘上看不清。 */
+#keyPopupCancelTip {
+    display: none;
+    position: fixed;
+    z-index: 31;
+    transform: translateX(-50%);
+    padding: 5px 14px;
+    border-radius: 999px;
+    background: var(--card-bg);
+    border: 1px solid var(--line);
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 600;
+    box-shadow: 0 4px 16px #000a;
+    pointer-events: none;
+    white-space: nowrap;
+}
+#keyPopupCancelTip.show { display: block; }
+/* 横屏高度预算按 qwerty 的 4px gap 计算——T9 保持 5px 会侵入底部
+ * 预留（codex round-2 P2-7 实测 3px）。 */
+body.landscape .t9-grid { gap: 4px 5px; }
+/* T9 空格键：长按圆点（::after）挪到左上角，右上角留给字面 0 角标。 */
+#spaceKey.t9-space::after { right: auto; left: 3px; }
+/* Emoji sub-view: snapping page scroller over the category strip.
+ * No edge mask - the pages are exactly full width and a mask would dim
+ * the first/last emoji column. */
+.emoji-area {
+    grid-column: 2 / 6;
+    grid-row: 1 / 5;
+    display: grid;
+    grid-template-rows: 1fr auto;
+    gap: 4px;
+    min-width: 0;
+}
+.emoji-pages {
+    display: flex;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    touch-action: pan-x;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+}
+.emoji-page {
+    flex: 0 0 100%;
+    scroll-snap-align: start;
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    grid-template-rows: repeat(3, 1fr);
+    gap: 4px;
+    min-width: 0;
+}
+.emoji-key {
+    border: 0;
+    border-radius: var(--radius-key);
+    background: var(--key);
+    color: var(--text);
+    font-size: min(22px, calc(var(--kb-row-h, 44px) * 0.52));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 0;
+    padding: 0;
+}
+.emoji-key:active { background: var(--pressed); }
+.emoji-cats { display: flex; gap: 4px; overflow-x: auto; touch-action: pan-x; scrollbar-width: none; }
+body.landscape .num-grid { gap: 3px; }
+
+/* Long-press affordance (design §1.2): ONLY keys whose long-press opens
+ * a hidden surface or toggles a state wear the top-right dot - 123
+ * (nine-pad), the mode toggle (mode menu), Shift (caps lock) and the
+ * ctrl layer's sticky keys (combo grids, via bindCtrlLayer's own timer,
+ * no data-lp). Repeat-style holds (⌫/enter/arrows) and letter popups
+ * stay bare - a dot on every key reads as noise (user review). */
+.kb-key[data-lp="lock"],
+.kb-key[data-lp="numpad"],
+.kb-key[data-lp="mode-menu"],
+.kb-key[data-lp="voice-hold"],
+#ctrlLayer .ctrl-mod {
+    position: relative;
+}
+.kb-key[data-lp="lock"]::after,
+.kb-key[data-lp="numpad"]::after,
+.kb-key[data-lp="mode-menu"]::after,
+.kb-key[data-lp="voice-hold"]::after,
+#ctrlLayer .ctrl-mod::after {
+    content: '';
+    position: absolute;
+    top: 3px;
+    right: 3px;
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: var(--key-subtext);
+    pointer-events: none;
+}
 
 /* In-space mic glyph: the space key shows ONLY
  * a centered mic - the mode shorthand lives on the adjacent toggle key.
@@ -535,7 +1119,7 @@ body.settings-page .compose-tool { display: none; }
 .panel-tabs {
     flex: none;
     display: flex;
-    background: var(--panel);
+    background: rgb(var(--panel-rgb) / var(--key-alpha));
     border-radius: 16px;
     padding: 2px;
 }
@@ -559,9 +1143,15 @@ body.settings-page .compose-tool { display: none; }
     min-height: 0;
     overflow-y: auto;
     border-radius: 10px;
-    background: var(--panel);
+    /* 候选列表块与键帽同材质（验收反馈）：背景按「按键不透明度」
+     * 合成，壁纸上与键帽一致地透，不再是一块死色。 */
+    background: rgb(var(--panel-rgb) / var(--key-alpha));
     padding: 4px;
 }
+/* 空态不铺列表块（验收反馈）：提示只占一行，列表整个收起，
+ * 剩余空间透出键盘背景。 */
+#panelLayer[data-empty] #panelList { display: none; }
+#panelLayer[data-empty] #panelEmpty { flex: none; padding: 14px 0 18px; }
 .panel-item {
     display: flex;
     align-items: center;
@@ -622,7 +1212,12 @@ body.settings-page .compose-tool { display: none; }
     display: flex;
     flex-direction: column;
     gap: 2px;
-    height: 57px;
+    /* 槽位守恒（2026-09-18 用户反馈：展开 ctrl 层主键盘高度会变）：
+     * 普通态槽位 = --preedit-band(padTop) + bar(2+40+10)；ctrl 态 =
+     * padTop 3 + margins 6 + height。height 随 band 走才能让 qwerty 的
+     * 起点与层高在两态完全一致（band 加大时 ctrlLayer 同步加高）。
+     * 默认 band 18 → 61px。 */
+    height: calc(var(--preedit-band, 18px) + 43px);
     margin-top: 3px;
     margin-bottom: 3px;
 }
@@ -632,17 +1227,19 @@ body.settings-page .compose-tool { display: none; }
  * applyHeight's chrome so the keyboard rows below keep their height) and
  * hand the space to the control keys. */
 body.ctrl-view #softKeyboard { padding-top: 3px; }
-/* Design §11: both landscape slots total 62px before the letter rows.
- * Candidate: 4 + 14 + 40 + 4. Control: 3 + (27 + 2 + 27) + 3. */
-body.landscape #ctrlLayer { height: 56px; margin-top: 0; margin-bottom: 3px; gap: 2px; }
+/* Design §11: both landscape slots total 62px before the letter rows
+ * (band 18). Candidate: band + 40 + 4. Control: 3 + H + 3 → H = band + 38. */
+body.landscape #ctrlLayer { height: calc(var(--preedit-band, 18px) + 38px); margin-top: 0; margin-bottom: 3px; gap: 2px; }
 #ctrlLayer .ctrl-row {
     display: grid;
     grid-template-columns: repeat(8, 1fr);
     gap: 2px;
     margin-bottom: 0;
-    height: 27px;
+    /* 弹性等分容器富余（band 加大时键面随之变高），min-height 保底。 */
+    flex: 1 1 0;
+    min-height: 27px;
 }
-body.landscape #ctrlLayer .ctrl-row { gap: 2px; height: 27px; }
+body.landscape #ctrlLayer .ctrl-row { gap: 2px; height: auto; }
 #ctrlLayer .ctrl-key {
     height: 100%;
     /* The rows borrow the MAIN keyboard's key language -
@@ -911,24 +1508,86 @@ body.height-editing #candidateBar { margin-top: 39px; }
     gap: 9px;
     max-height: calc(100% - 12px);
 }
+/* mic 浮层：撤销回右上角（小、描边、能看明白即可），
+ * 说完了居中实心大按钮（主要出口）。 */
+#voiceActions {
+    display: flex;
+    justify-content: center;
+    width: 100%;
+    margin-top: 3px;
+}
+#voiceDone {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    width: 58%;
+    min-height: 36px;
+    padding: 0 12px;
+    border: 0;
+    border-radius: 18px;
+    background: var(--accent);
+    color: var(--accent-ink);
+    font-size: 14px;
+    font-weight: 650;
+    line-height: 1;
+}
+#voiceDone:active, #voiceDone.active-touch {
+    background: var(--accent-text);
+}
 #voiceClose {
     position: absolute;
     top: 6px;
     right: 6px;
-    width: 28px;
-    height: 28px;
-    padding: 0;
-    border: 0;
-    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    height: 24px;
+    padding: 0 8px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
     background: transparent;
     color: var(--card-sub);
-    font-size: 20px;
+    font-size: 11px;
     line-height: 1;
 }
 #voiceClose:active, #voiceClose.active-touch {
     background: var(--pressed);
     color: var(--card-text);
 }
+/* 长按空格浮层：无按钮；「上滑撤销」是卡片下方的常驻 toast 胶囊
+ * （半透明底、不自动消失），上滑时整体 transform scale 放大——
+ * 字体和背景同步变大。位置锚在卡片下沿之下，不随卡片缩放。 */
+#voiceSlideHint {
+    display: none;
+    position: absolute;
+    left: 50%;
+    top: 42%;
+    transform: translateX(-50%) scale(0.85);
+    transform-origin: center;
+    margin-top: 65px;
+    z-index: 1;
+    padding: 8px 16px;
+    border-radius: 999px;
+    background: #000000b3;
+    color: #ffffff;
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+#voiceSlideHint.arm {
+    background: #07180ecc;
+    color: var(--accent-text);
+}
+#voiceOverlay.hold #voiceActions { display: none; }
+#voiceOverlay.hold #voiceSlideHint { display: block; }
+#voiceOverlay.hold #voiceClose { display: none; }
+#voiceOverlay.hold #voiceCard {
+    /* 提示挪到卡片外，卡片收紧：框住状态+识别内容+松手上屏即可。 */
+    gap: 6px;
+    padding-bottom: 11px;
+}
+#voiceOverlay.hold #voiceHint { min-height: 0; }
 /* The recording dot became a half-height mic icon (20px) - the
  * pulse animates the icon itself (colour pulse via opacity), both themes. */
 #voiceCard .vc-mic {
@@ -939,6 +1598,13 @@ body.height-editing #candidateBar { margin-top: 39px; }
 }
 #voiceCard .vc-mic svg { display: block; width: 100%; height: 100%; }
 @keyframes vcPulse { 50% { opacity: .55; transform: scale(1.15); } }
+/* 引擎加载/收尾态（issue #11）：脉冲是「可以开始说话」的唯一信号——
+ * 加载中麦克风静态弱化，用户不会对着还没就绪的引擎过早开口。 */
+#voiceOverlay[data-state="loading"] .vc-mic,
+#voiceOverlay[data-state="stopping"] .vc-mic {
+    animation: none;
+    opacity: .45;
+}
 /* Landscape keyboards are short (~170-200px) - compact the
  * card and center it so nothing clips. */
 body.landscape #voiceCard {
@@ -947,7 +1613,14 @@ body.landscape #voiceCard {
     padding: 10px 12px 9px;
     gap: 5px;
 }
-body.landscape #voiceClose { top: 4px; right: 4px; width: 24px; height: 24px; font-size: 18px; }
+body.landscape #voiceDone { min-height: 30px; font-size: 13px; width: 58%; }
+body.landscape #voiceClose { top: 4px; right: 4px; height: 21px; padding: 0 7px; font-size: 10px; }
+/* 横屏卡片同锚点 42%（原 50% 会把下方胶囊挤进空格键行）。 */
+body.landscape #voiceCard { top: 42%; }
+/* 横屏卡片下缘与空格键之间放不下整颗胶囊（20px < 23px+间距）：
+   让胶囊贴住并轻微压住卡片下缘——滑动时卡片本来就变透明，
+   换来永不遮挡空格键。 */
+body.landscape #voiceSlideHint { margin-top: 48px; padding: 5px 13px; font-size: 12px; }
 #voiceStatus { font-size: 13px; font-weight: 650; color: var(--card-text); min-height: 17px; text-align: center; }
 #partialText {
     font-size: 14px;
@@ -1075,6 +1748,10 @@ body.editing .phrase-add, body.editing .phrase-cancel { padding: 6px 10px; }
     z-index: 35;
 }
 #expandLayer[hidden] { display: none; }
+/* 候选展开模式避让侧边条（issue #15）：让位的侧边条继续可用——浏览
+ * 候选时正好用得上复制/剪切/光标键。 */
+body[data-one-hand="left"] #expandLayer { inset: 0 var(--side-pad-w, 64px) 0 0; }
+body[data-one-hand="right"] #expandLayer { inset: 0 0 0 var(--side-pad-w, 64px); }
 body.expanded #preeditLine { display: none; }
 .expand-head {
     flex: none;
@@ -1228,34 +1905,10 @@ body.expanded #preeditLine { display: none; }
     overflow-y: auto;
 }
 #settingsPanel.open { display: flex; }
+/* 背景图开启时面板透出图（tile 本体仍实色，文字可读性不受影响）；
+ * 纯色背景时维持 --bg 实底。 */
+body[data-bg-image="on"] #settingsPanel { background: transparent; }
 #settingsPanel[hidden] { display: none; }
-/* / 自然码 key map drawn as an actual key layout.
- * No more shift/⌫ placeholder cells - every row is centered
- * on its own (flex), keys keep one uniform width, so the shorter third row
- * reads as a proper centered row instead of a padded one. V's
- * two short finals share one line ("ui ü"). */
-#schemaMap { margin: 4px 0 2px; font-size: 11px; color: var(--text); }
-#schemaMap .map-notes { margin-bottom: 8px; }
-#schemaMap .map-line { margin-bottom: 4px; color: var(--muted); font-size: 11px; }
-#schemaMap .kmap-row {
-    display: flex;
-    justify-content: center;
-    gap: 4px;
-    margin-bottom: 4px;
-}
-.kmap-key {
-    flex: none;
-    width: 9.2%;
-    min-width: 0;
-    background: var(--key);
-    border-radius: var(--radius-key);
-    padding: 3px 0;
-    text-align: center;
-    line-height: 1.25;
-}
-.kmap-key b { display: block; font-size: 12px; font-weight: 600; color: var(--text); }
-.kmap-key span { display: block; font-size: 8px; color: var(--muted); white-space: nowrap; }
-.kmap-key i { font-style: normal; font-size: 8px; color: var(--accent-text); }
 /* The custom table's per-row preview. */
 .custom-editor .set-row { align-items: center; }
 .custom-preview {
@@ -1690,6 +2343,71 @@ body.expanded #preeditLine { display: none; }
     font-weight: 600;
 }
 #settingsPanel .set-opt[disabled] { opacity: .45; }
+
+/* ===== 快捷设置方块网格（微信式 2×4，横向滑动翻页） =====
+ * 页容器 native scroll-snap（无手势代码，t9-side 教训）；tile 即状态：
+ * 点按直接生效并重渲染，开关块的图标/状态行着色跟随。 */
+.qs-wrap { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 4px 0 0; }
+.qs-pages {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    overflow-x: auto;
+    overflow-y: hidden;
+    /* 翻页吸附由 keyboard.js 手势接管（touchmove 跟手 + touchend
+     * scrollTo），CSS scroll-snap 会在松手时抢先吸附、与 JS 目标页
+     * 竞争（用户反馈「要划大半屏才翻页」的元凶之一），必须关闭。 */
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+}
+.qs-pages::-webkit-scrollbar { display: none; }
+.qs-page {
+    flex: 0 0 100%;
+    min-width: 100%;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    grid-template-rows: repeat(2, 1fr);
+    gap: 7px;
+    min-height: 0;
+    padding: 2px 2px 4px;
+}
+.qs-tile {
+    min-width: 0;
+    min-height: 0;
+    border: 0;
+    border-radius: 12px;
+    background: var(--special);
+    color: var(--text);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    padding: 4px 2px;
+}
+/* 亮色下 --special 是灰块，观感不佳（用户反馈）：亮色统一白底，
+ * 「完整设置」大方块改用更亮的 --key + 描边保持区分。 */
+html.theme-light .qs-tile { background: var(--panel); }
+.qs-tile svg { width: 24px; height: 24px; flex: none; }
+.qs-tile:active { background: var(--pressed); }
+.qs-tile.on svg { color: var(--accent); }
+.qs-name { font-size: 12px; line-height: 1.2; }
+.qs-state {
+    max-width: 100%;
+    font-size: 10px;
+    line-height: 1.2;
+    color: var(--muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.qs-tile.on .qs-state { color: var(--accent-text); }
+.qs-big { background: var(--panel); border: 1px solid var(--line); }
+html.theme-light .qs-big { background: var(--key); }
+.qs-big svg { color: var(--accent); }
+.qs-dots { flex: none; display: flex; justify-content: center; gap: 7px; padding: 6px 0 4px; }
+.qs-dots span { width: 6px; height: 6px; border-radius: 50%; background: var(--line); }
+.qs-dots span.cur { background: var(--accent); }
 
 /* Shared surfaces and controls (docs/design/appearance.md). Distinct tool circles and
  * keycaps retain their roles; all text states use theme-specific colors. */
