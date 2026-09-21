@@ -148,6 +148,12 @@
     .download-card > .icon { width: 30px; height: 30px; color: var(--green); }
     .download-card > .icon:last-child { margin-left: auto; width: 20px; height: 20px; }
     .download-card h3 { font-size: 17px; font-weight: 600; display: flex; align-items: center; gap: 12px; }
+    /* APK 卡双动作：GitHub 直链 + ghproxy 镜像（整卡不再是链接，拆成两个按钮）。 */
+    .dl-actions { margin-left: auto; display: flex; gap: 8px; flex: none; }
+    .dl-btn { display: inline-flex; align-items: center; min-height: 40px; padding: 6px 13px; border: 1px solid #09D96755; border-radius: 7px; background: #09D96712; color: var(--green); font-size: 13px; font-weight: 600; white-space: nowrap; transition: border-color .15s, background .15s, color .15s; }
+    .dl-btn:hover { border-color: var(--green); background: #1D2C27; }
+    .dl-btn.ghost { border-color: #39423E; background: transparent; color: #9ED9B4; }
+    .dl-btn.ghost:hover { border-color: var(--green); background: #1D2C27; color: var(--green); }
     .version-tag { padding: 2px 6px; color: var(--green); background: #09D96713; border: 1px solid #09D96725; border-radius: 4px; font: 11px/1.5 ui-monospace, monospace; }
     .download-card p { color: var(--muted); font-size: 12px; margin-top: 7px; }
     .download-card.unavailable { border-color: var(--line); background: transparent; color: #9A9AA8; }
@@ -221,7 +227,10 @@
       .open-source { flex-direction: column; align-items: flex-start; gap: 5px; padding-top: 15px; }
       .open-source p { font-size: 12px; }
       .download-section { padding-block: 49px; }
-      .download-card { gap: 13px; padding: 20px 17px; }
+      .download-card { gap: 13px; padding: 20px 17px; flex-wrap: wrap; }
+      /* 窄屏：文字区整行，按钮换第二行（两键等宽），h3 不被挤压断行。 */
+      .dl-actions { width: calc(100% - 43px); margin-left: 43px; gap: 10px; }
+      .dl-btn { flex: 1; min-height: 44px; padding-inline: 10px; font-size: 13px; }
       .download-card h3 { font-size: 16px; gap: 7px; }
       .download-card p { font-size: 10px; }
       .site-footer { flex-direction: column; gap: 4px; padding-block: 25px 19px; }
@@ -336,8 +345,8 @@
         <div class="download-copy"><p class="section-label">开始使用</p><h2 class="section-heading" id="download-title">下一句话，<br>用 Feelime 输入。</h2><p>两个安装包任选：thin 精简，语音模型在应用内按需下载；full 内置模型，装好即用。<br>准备好后，就可以自在地离线输入了。</p></div>
         <div class="download-options">
           <a class="download-card" data-release-href href="https://github.com/feelime/feelime/releases/latest" aria-label="前往 GitHub Release 查看 Feelime 全部版本与更新日志"><svg class="icon icon-solid" aria-hidden="true"><use href="#i-github"></use></svg><div><h3>GitHub Release<span class="version-tag" data-release-version>v1.0.21</span></h3><p>最新版本与更新日志都在这里</p></div><svg class="icon" aria-hidden="true"><use href="#i-arrow"></use></svg></a>
-          <a class="download-card" data-release-asset="thin" href="https://github.com/feelime/feelime/releases/latest" aria-label="直接下载 Feelime thin APK"><svg class="icon" aria-hidden="true"><use href="#i-download"></use></svg><div><h3>thin APK · <span data-release-size="thin">69MB</span></h3><p>语音模型在应用内按需下载</p></div><svg class="icon" aria-hidden="true"><use href="#i-arrow"></use></svg></a>
-          <a class="download-card" data-release-asset="full" href="https://github.com/feelime/feelime/releases/latest" aria-label="直接下载 Feelime full APK"><svg class="icon" aria-hidden="true"><use href="#i-download"></use></svg><div><h3>full APK · <span data-release-size="full">336MB</span></h3><p>内置离线语音模型，装好即用</p></div><svg class="icon" aria-hidden="true"><use href="#i-arrow"></use></svg></a>
+          <div class="download-card"><svg class="icon" aria-hidden="true"><use href="#i-download"></use></svg><div><h3>thin APK · <span data-release-size="thin">69MB</span></h3><p>语音模型在应用内按需下载</p></div><div class="dl-actions"><a class="dl-btn" data-release-asset="thin" href="https://github.com/feelime/feelime/releases/latest" aria-label="从 GitHub 下载 thin APK">GitHub</a><a class="dl-btn ghost" data-release-mirror="thin" href="https://github.com/feelime/feelime/releases/latest" aria-label="从 ghproxy 镜像下载 thin APK">镜像加速</a></div></div>
+          <div class="download-card"><svg class="icon" aria-hidden="true"><use href="#i-download"></use></svg><div><h3>full APK · <span data-release-size="full">336MB</span></h3><p>内置离线语音模型，装好即用</p></div><div class="dl-actions"><a class="dl-btn" data-release-asset="full" href="https://github.com/feelime/feelime/releases/latest" aria-label="从 GitHub 下载 full APK">GitHub</a><a class="dl-btn ghost" data-release-mirror="full" href="https://github.com/feelime/feelime/releases/latest" aria-label="从 ghproxy 镜像下载 full APK">镜像加速</a></div></div>
           <div class="download-card unavailable" aria-disabled="true"><svg class="icon" aria-hidden="true"><use href="#i-play"></use></svg><div><h3>Google Play</h3><p>稍后也能在这里找到我们</p></div><span class="coming-soon">即将上线</span></div>
         </div>
       </div>
@@ -361,11 +370,16 @@
     document.querySelectorAll('[data-release-version]').forEach((el) => {
       el.textContent = data.tag_name;
     });
-    // thin/full 直链：按文件名后缀在 assets 里找，拿不到就保持 releases/latest。
+    // thin/full 直链 + ghproxy 镜像：按文件名后缀在 assets 里找，
+    // 拿不到就保持 releases/latest 兜底（不拼文件名，tag 内嵌版本易漂移）。
     document.querySelectorAll('[data-release-asset]').forEach((el) => {
       const asset = (data.assets || []).find(
           a => a.name.endsWith('-' + el.dataset.releaseAsset + '.apk'));
-      if (asset) el.href = asset.browser_download_url;
+      if (!asset) return;
+      el.href = asset.browser_download_url;
+      const mirror = document.querySelector(
+          '[data-release-mirror="' + el.dataset.releaseAsset + '"]');
+      if (mirror) mirror.href = 'https://ghproxy.net/' + asset.browser_download_url;
     });
     document.querySelectorAll('[data-release-size]').forEach((el) => {
       const asset = (data.assets || []).find(
