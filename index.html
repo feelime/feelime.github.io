@@ -372,13 +372,15 @@
     document.querySelectorAll('[data-release-version]').forEach((el) => {
       el.textContent = data.tag_name;
     });
-    // thin/full 直链 + ghproxy 镜像：按文件名后缀在 assets 里找，
-    // 拿不到就保持 releases/latest 兜底（不拼文件名，tag 内嵌版本易漂移）。
+    // thin/full 直链 + 镜像兜底（ghproxy.net）：按文件名后缀在 assets 里
+    // 找，拿不到就保持 releases/latest（不拼文件名，tag 内嵌版本易漂移）。
+    const assetUrls = {};
     document.querySelectorAll('[data-release-asset]').forEach((el) => {
       const asset = (data.assets || []).find(
           a => a.name.endsWith('-' + el.dataset.releaseAsset + '.apk'));
       if (!asset) return;
       el.href = asset.browser_download_url;
+      assetUrls[el.dataset.releaseAsset] = asset.browser_download_url;
       const mirror = document.querySelector(
           '[data-release-mirror="' + el.dataset.releaseAsset + '"]');
       if (mirror) mirror.href = 'https://ghproxy.net/' + asset.browser_download_url;
@@ -388,33 +390,49 @@
           a => a.name.endsWith('-' + el.dataset.releaseSize + '.apk'));
       if (asset) el.textContent = Math.round(asset.size / 1048576) + 'MB';
     });
-    // 链路测速（后台）：对 GitHub 直链与 ghproxy 镜像各发一个小请求，
-    // 拿到响应头就断开（no-cors 无法带 Range，abort 挡住 body，流量只有
-    // 一个 RTT）。镜像快 300ms 以上才切换推荐，避免抖动；任何失败/超时
-    // 保持 GitHub 优先——顺带充当镜像域名的健康检查。
-    const thinAsset = (data.assets || []).find(a => a.name.endsWith('-thin.apk'));
-    if (thinAsset) {
-      const probeLink = (url) => new Promise((resolve) => {
-        const ctrl = new AbortController();
+    // 链路测速（后台）：GitHub 直链与几个 ghproxy 系镜像竞速，谁先返回
+    // 响应头谁最快（no-cors 无法带 Range，abort 挡住 body，流量只一个
+    // RTT）。冠军产生后再给 300ms 宽限看有无并列，没有就掐掉其余收榜；
+    // 镜像胜出则推荐位切到镜像按钮，且镜像 href 改指胜出域名。全灭或
+    // GitHub 胜出保持默认（GitHub 优先 + ghproxy.net 兜底）。
+    const MIRROR_PREFIXES = ['https://ghproxy.net/', 'https://gh-proxy.com/',
+        'https://ghfast.top/'];  // 2026-09 实测可用；mirror.ghproxy.com 已失效
+    const raceLinks = (candidates) => new Promise((resolve) => {
+      const racers = candidates.map(c => ({ ...c, ctrl: new AbortController() }));
+      const settle = (winner) => {
+        racers.forEach(r => r.ctrl.abort());
+        resolve(winner);
+      };
+      let champion = null;
+      racers.forEach((r) => {
         const started = performance.now();
-        const timer = setTimeout(() => { ctrl.abort(); resolve(Infinity); }, 4500);
-        fetch(url, { mode: 'no-cors', cache: 'no-store', signal: ctrl.signal })
+        const timer = setTimeout(() => r.ctrl.abort(), 4500);
+        fetch(r.url, { mode: 'no-cors', cache: 'no-store', signal: r.ctrl.signal })
             .then(() => {
-              clearTimeout(timer); ctrl.abort();
-              resolve(performance.now() - started);
+              clearTimeout(timer);
+              if (champion) return;
+              champion = { prefix: r.prefix || null,
+                  ms: Math.round(performance.now() - started) };
+              // 冠军已定：300ms 宽限后收榜（其余没到就没必要再等）。
+              setTimeout(() => settle(champion), 300);
             })
-            .catch(() => { clearTimeout(timer); resolve(Infinity); });
+            .catch(() => clearTimeout(timer))
+            .finally(() => clearTimeout(timer));
       });
-      const [ghMs, mirrorMs] = await Promise.all([
-        probeLink(thinAsset.browser_download_url),
-        probeLink('https://ghproxy.net/' + thinAsset.browser_download_url),
-      ]);
-      if (mirrorMs < ghMs - 300) {
+      setTimeout(() => { if (!champion) settle(null); }, 4800);
+    });
+    if (assetUrls.thin) {
+      const winner = await raceLinks([{ key: 'github', url: assetUrls.thin }].concat(
+          MIRROR_PREFIXES.map(prefix => ({ key: 'mirror', prefix,
+              url: prefix + assetUrls.thin }))));
+      if (winner && winner.prefix) {
         document.querySelectorAll('[data-release-asset]').forEach(
             el => el.classList.add('ghost'));
         document.querySelectorAll('[data-release-mirror]').forEach(el => {
           el.classList.remove('ghost');
           el.classList.add('recommended');
+          const base = assetUrls[el.dataset.releaseMirror];
+          if (base) el.href = winner.prefix + base;
         });
       }
     }
