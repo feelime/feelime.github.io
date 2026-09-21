@@ -154,6 +154,8 @@
     .dl-btn:hover { border-color: var(--green); background: #1D2C27; }
     .dl-btn.ghost { border-color: #39423E; background: transparent; color: #9ED9B4; }
     .dl-btn.ghost:hover { border-color: var(--green); background: #1D2C27; color: var(--green); }
+    /* 链路测速后的推荐位：胜者换到第一位（样式由 ghost 切换完成）。 */
+    .dl-btn.recommended { order: -1; }
     .version-tag { padding: 2px 6px; color: var(--green); background: #09D96713; border: 1px solid #09D96725; border-radius: 4px; font: 11px/1.5 ui-monospace, monospace; }
     .download-card p { color: var(--muted); font-size: 12px; margin-top: 7px; }
     .download-card.unavailable { border-color: var(--line); background: transparent; color: #9A9AA8; }
@@ -342,11 +344,11 @@
 
     <section class="download-section" id="download" aria-labelledby="download-title">
       <div class="download-layout container">
-        <div class="download-copy"><p class="section-label">开始使用</p><h2 class="section-heading" id="download-title">下一句话，<br>用 Feelime 输入。</h2><p>两个安装包任选：thin 精简，语音模型在应用内按需下载；full 内置模型，装好即用。<br>准备好后，就可以自在地离线输入了。</p></div>
+        <div class="download-copy"><p class="section-label">开始使用</p><h2 class="section-heading" id="download-title">下一句话，<br>用 Feelime 输入。</h2><p>两个安装包任选：精简版体积小，语音识别模型需额外下载；完整版内置模型，装好即用。<br>准备好后，就可以自在地离线输入了。</p></div>
         <div class="download-options">
           <a class="download-card" data-release-href href="https://github.com/feelime/feelime/releases/latest" aria-label="前往 GitHub Release 查看 Feelime 全部版本与更新日志"><svg class="icon icon-solid" aria-hidden="true"><use href="#i-github"></use></svg><div><h3>GitHub Release<span class="version-tag" data-release-version>v1.0.21</span></h3><p>最新版本与更新日志都在这里</p></div><svg class="icon" aria-hidden="true"><use href="#i-arrow"></use></svg></a>
-          <div class="download-card"><svg class="icon" aria-hidden="true"><use href="#i-download"></use></svg><div><h3>thin APK · <span data-release-size="thin">69MB</span></h3><p>语音模型在应用内按需下载</p></div><div class="dl-actions"><a class="dl-btn" data-release-asset="thin" href="https://github.com/feelime/feelime/releases/latest" aria-label="从 GitHub 下载 thin APK">GitHub</a><a class="dl-btn ghost" data-release-mirror="thin" href="https://github.com/feelime/feelime/releases/latest" aria-label="从 ghproxy 镜像下载 thin APK">镜像加速</a></div></div>
-          <div class="download-card"><svg class="icon" aria-hidden="true"><use href="#i-download"></use></svg><div><h3>full APK · <span data-release-size="full">336MB</span></h3><p>内置离线语音模型，装好即用</p></div><div class="dl-actions"><a class="dl-btn" data-release-asset="full" href="https://github.com/feelime/feelime/releases/latest" aria-label="从 GitHub 下载 full APK">GitHub</a><a class="dl-btn ghost" data-release-mirror="full" href="https://github.com/feelime/feelime/releases/latest" aria-label="从 ghproxy 镜像下载 full APK">镜像加速</a></div></div>
+          <div class="download-card"><svg class="icon" aria-hidden="true"><use href="#i-download"></use></svg><div><h3>精简版安装包 · <span data-release-size="thin">69MB</span></h3><p>语音识别模型需额外下载，在应用内按需获取</p></div><div class="dl-actions"><a class="dl-btn" data-release-asset="thin" href="https://github.com/feelime/feelime/releases/latest" aria-label="从 GitHub 下载精简版安装包">GitHub</a><a class="dl-btn ghost" data-release-mirror="thin" href="https://github.com/feelime/feelime/releases/latest" aria-label="从 ghproxy 镜像下载精简版安装包">镜像加速</a></div></div>
+          <div class="download-card"><svg class="icon" aria-hidden="true"><use href="#i-download"></use></svg><div><h3>完整版安装包 · <span data-release-size="full">336MB</span></h3><p>内置离线语音识别模型，装好即用</p></div><div class="dl-actions"><a class="dl-btn" data-release-asset="full" href="https://github.com/feelime/feelime/releases/latest" aria-label="从 GitHub 下载完整版安装包">GitHub</a><a class="dl-btn ghost" data-release-mirror="full" href="https://github.com/feelime/feelime/releases/latest" aria-label="从 ghproxy 镜像下载完整版安装包">镜像加速</a></div></div>
           <div class="download-card unavailable" aria-disabled="true"><svg class="icon" aria-hidden="true"><use href="#i-play"></use></svg><div><h3>Google Play</h3><p>稍后也能在这里找到我们</p></div><span class="coming-soon">即将上线</span></div>
         </div>
       </div>
@@ -386,6 +388,36 @@
           a => a.name.endsWith('-' + el.dataset.releaseSize + '.apk'));
       if (asset) el.textContent = Math.round(asset.size / 1048576) + 'MB';
     });
+    // 链路测速（后台）：对 GitHub 直链与 ghproxy 镜像各发一个小请求，
+    // 拿到响应头就断开（no-cors 无法带 Range，abort 挡住 body，流量只有
+    // 一个 RTT）。镜像快 300ms 以上才切换推荐，避免抖动；任何失败/超时
+    // 保持 GitHub 优先——顺带充当镜像域名的健康检查。
+    const thinAsset = (data.assets || []).find(a => a.name.endsWith('-thin.apk'));
+    if (thinAsset) {
+      const probeLink = (url) => new Promise((resolve) => {
+        const ctrl = new AbortController();
+        const started = performance.now();
+        const timer = setTimeout(() => { ctrl.abort(); resolve(Infinity); }, 4500);
+        fetch(url, { mode: 'no-cors', cache: 'no-store', signal: ctrl.signal })
+            .then(() => {
+              clearTimeout(timer); ctrl.abort();
+              resolve(performance.now() - started);
+            })
+            .catch(() => { clearTimeout(timer); resolve(Infinity); });
+      });
+      const [ghMs, mirrorMs] = await Promise.all([
+        probeLink(thinAsset.browser_download_url),
+        probeLink('https://ghproxy.net/' + thinAsset.browser_download_url),
+      ]);
+      if (mirrorMs < ghMs - 300) {
+        document.querySelectorAll('[data-release-asset]').forEach(
+            el => el.classList.add('ghost'));
+        document.querySelectorAll('[data-release-mirror]').forEach(el => {
+          el.classList.remove('ghost');
+          el.classList.add('recommended');
+        });
+      }
+    }
   } catch (_) { /* 保持 releases/latest 兜底链接 */ }
 })();
 // 部署缓存标记：本次访问的所有键盘资源使用相同时间戳。
