@@ -2,42 +2,60 @@
  * Key geometry: 44px keys, 5px gaps, ~272px content height inside the IME
  * view (the budget formula lives in applyHeight, keyboard.js).
  * Colors are tokenized per docs/design/appearance.md (design §1.1).
- * Pixel-gated hard-coded colors that must NOT be re-themed:
- *   .kb-mod.active/.locked background #103a24 (device_verify shift-green),
- *   .kp-item.sel text #07180e. (the voice overlay dropped
- *   its reds for the accent palette - no red pixel gates remain.) */
+ * Historical pixel gates (#103a24 shift-green, #07180e sel text) were
+ * retired with the #31 hue slider: the surfaces now derive from --kb-hue
+ * (--mod-active-bg / --accent-strong + --accent-ink); the old hexes survive
+ * only as var() fallbacks. */
 /* Theme tokens: dark by default, light via system scheme or manual override
  * (html.theme-light / html.theme-dark). */
 :root {
     color-scheme: dark;
-    /* 键帽不透明度滑块（外观页）：--key/--special/--pressed 由 rgb 基色
-     * + alpha 合成，JS 只调 --key-alpha（0-1），键帽文字保持实色。 */
-    --key-rgb: 95 95 95;
-    --special-rgb: 65 65 65;
-    --pressed-rgb: 110 110 110;
+    /* #31 色相滑条（oh-my-term 式「一个 hue 驱动全套」）：--kb-hue 是
+     * 唯一的色相源，键帽/面板/背景按低饱和各自带一点色相（中性灰时代
+     * S=0，用户反馈「只换 accent 没区别」），accent 三件套饱和度高。
+     * --kb-hue 的来源优先级：内联 style（自定义滑条值，inline 胜一切
+     * 属性选择器）> html[data-preset]（六预置=六个固定 hue）> 默认 160
+     * （经典绿，校准为与旧版硬编码观感一致）。像素门禁色（文件头注释
+     * 列的两处）不参与派生。 */
+    --kb-hue: 160;
+    /* 饱和度缩放（黑白灰滑块，用户验收二轮 2026-09-27）：0=纯灰度
+     * （黑白灰主题，明暗模式定黑白基底）、1=全彩默认。乘在各表面
+     * 的设计饱和度上，层次（键帽淡/面板中/accent 浓）保持比例。 */
+    --kb-sat: 1;
+    /* 皮肤双组（用户验收四轮：背景/键面独立色调+饱和度）：
+     * --bg-hue/--bg-sat 驱动背景/面板/线条/卡片；--key-hue/--key-sat
+     * 驱动键帽/特殊键/accent。默认键面组继承背景组（未自定义键面时
+     * 与旧单源行为一致），JS 只在用户自定义时内联覆盖键面组。 */
+    --bg-hue: var(--kb-hue);
+    --bg-sat: var(--kb-sat, 1);
+    --key-hue: var(--kb-hue);
+    --key-sat: var(--kb-sat, 1);
+    /* 键帽不透明度滑块（外观页）：hsla 的 alpha 位由 JS 只调
+     * --key-alpha（0-1），键帽文字保持实色。 */
     --key-alpha: 1;
-    --bg: #202020;
-    --key: rgb(var(--key-rgb) / var(--key-alpha));
-    --special: rgb(var(--special-rgb) / var(--key-alpha));
-    --pressed: rgb(var(--pressed-rgb) / var(--key-alpha));
+    --bg: hsl(var(--bg-hue) calc(22% * var(--bg-sat, 1)) calc(12% + (100% - 12%) * 0.35 * var(--bg-lt, 0)));
+    --key: hsl(var(--key-hue) calc(16% * var(--key-sat, 1)) calc(37% + (100% - 37%) * 0.75 * var(--key-lt, 0)) / var(--key-alpha));
+    --special: hsl(var(--key-hue) calc(22% * var(--key-sat, 1)) calc(25% + (100% - 25%) * 0.75 * var(--key-lt, 0)) / var(--key-alpha));
+    --pressed: hsl(var(--key-hue) calc(16% * var(--key-sat, 1)) calc(43% + (100% - 43%) * 0.75 * var(--key-lt, 0)) / var(--key-alpha));
     --text: #e8e8e8;
     --muted: #b0b0b0;
-    --accent: #23c890;
+    --accent: hsl(var(--key-hue) calc(62% * var(--key-sat, 1)) calc(48% + (100% - 48%) * 0.75 * var(--key-lt, 0)));
+    --accent-strong: hsl(var(--key-hue) calc(62% * var(--key-sat, 1)) calc(30% + (100% - 30%) * 0.75 * var(--key-lt, 0)));
     --danger: #ff6b6b;
     --recording: #ff4d4d;
-    --panel: #2a2a2a;
-    --panel-rgb: 42 42 42;
-    --pill: #3d3d3d;
-    --logo-bg: #4d4d4d;
-    --icon: #989898;
-    --card-bg: #2b2b31;
+    --panel: hsl(var(--bg-hue) calc(22% * var(--bg-sat, 1)) calc(16% + (100% - 16%) * 0.35 * var(--bg-lt, 0)));
+    --panel-a: hsl(var(--bg-hue) calc(22% * var(--bg-sat, 1)) calc(16% + (100% - 16%) * 0.35 * var(--bg-lt, 0)) / var(--key-alpha));
+    --pill: hsl(var(--bg-hue) calc(20% * var(--bg-sat, 1)) calc(24% + (100% - 24%) * 0.35 * var(--bg-lt, 0)));
+    --logo-bg: hsl(var(--bg-hue) calc(8% * var(--bg-sat, 1)) calc(30% + (100% - 30%) * 0.35 * var(--bg-lt, 0)));
+    --icon: hsl(var(--bg-hue) calc(5% * var(--bg-sat, 1)) calc(60% + (100% - 60%) * 0.35 * var(--bg-lt, 0)));
+    --card-bg: hsl(var(--bg-hue) calc(9% * var(--bg-sat, 1)) calc(21% + (100% - 21%) * 0.35 * var(--bg-lt, 0)));
     --card-text: #e8e8e8;
     --card-sub: #a2a2ac;
     --input-placeholder: #dedede;
     --key-subtext: #dedede;
-    --accent-text: #5cdeb0;
-    --accent-ink: #07180e;
-    --line: #484848;
+    --accent-text: hsl(var(--key-hue) calc(60% * var(--key-sat, 1)) calc(66% + (100% - 66%) * 0.75 * var(--key-lt, 0)));
+    --accent-ink: hsl(var(--key-hue) calc(45% * var(--key-sat, 1)) calc(95% + (100% - 95%) * 0.75 * var(--key-lt, 0)));
+    --line: hsl(var(--bg-hue) calc(18% * var(--bg-sat, 1)) calc(28% + (100% - 28%) * 0.35 * var(--bg-lt, 0)));
     --radius-key: 5px;
     --radius-card: 10px;
     --scrim: #000000b8;
@@ -45,13 +63,10 @@
 
 html.theme-light {
     color-scheme: light;
-    --key-rgb: 252 252 252;
-    --special-rgb: 183 187 196;
-    --pressed-rgb: 236 238 242;
-    --bg: #e2e3e8;
-    --key: rgb(var(--key-rgb) / var(--key-alpha));
-    --special: rgb(var(--special-rgb) / var(--key-alpha));
-    --pressed: rgb(var(--pressed-rgb) / var(--key-alpha));
+    --key: hsl(var(--key-hue) calc(38% * var(--key-sat, 1)) calc(97% + (100% - 97%) * 0.75 * var(--key-lt, 0)) / var(--key-alpha));
+    --special: hsl(var(--key-hue) calc(42% * var(--key-sat, 1)) calc(72% + (100% - 72%) * 0.75 * var(--key-lt, 0)) / var(--key-alpha));
+    --pressed: hsl(var(--key-hue) calc(38% * var(--key-sat, 1)) calc(92% + (100% - 92%) * 0.75 * var(--key-lt, 0)) / var(--key-alpha));
+    --bg: hsl(var(--bg-hue) calc(32% * var(--bg-sat, 1)) calc(88% + (100% - 88%) * 0.35 * var(--bg-lt, 0)));
     --text: #181818;
     /* The old #b0b0b0 sat at ~2.1:1 on the light surfaces -
      * quick-settings text was effectively invisible. #5c616b keeps the
@@ -59,24 +74,39 @@ html.theme-light {
      * sits on (6.1 on --key, 5.7 on --panel, 4.9 on --bg; --special surfaces
      * carry --text, not muted). */
     --muted: #5c616b;
-    --accent: #23c890;
+    --accent: hsl(var(--key-hue) calc(62% * var(--key-sat, 1)) calc(42% + (100% - 42%) * 0.75 * var(--key-lt, 0)));
+    --accent-strong: hsl(var(--key-hue) calc(62% * var(--key-sat, 1)) calc(30% + (100% - 30%) * 0.75 * var(--key-lt, 0)));
     --danger: #d93025;
     --recording: #e5484d;
-    --panel: #f4f5f7;
-    --panel-rgb: 244 245 247;
-    --pill: #ffffff;
-    --logo-bg: #fcfcfc;
-    --icon: #787878;
-    --card-bg: #f7f7fa;
+    --panel: hsl(var(--bg-hue) calc(34% * var(--bg-sat, 1)) calc(95% + (100% - 95%) * 0.35 * var(--bg-lt, 0)));
+    --panel-a: hsl(var(--bg-hue) calc(34% * var(--bg-sat, 1)) calc(95% + (100% - 95%) * 0.35 * var(--bg-lt, 0)) / var(--key-alpha));
+    --pill: hsl(var(--bg-hue) calc(45% * var(--bg-sat, 1)) calc(99% + (100% - 99%) * 0.35 * var(--bg-lt, 0)));
+    --logo-bg: hsl(var(--bg-hue) calc(20% * var(--bg-sat, 1)) calc(99% + (100% - 99%) * 0.35 * var(--bg-lt, 0)));
+    --icon: hsl(var(--bg-hue) calc(5% * var(--bg-sat, 1)) calc(47% + (100% - 47%) * 0.35 * var(--bg-lt, 0)));
+    --card-bg: hsl(var(--bg-hue) calc(18% * var(--bg-sat, 1)) calc(97% + (100% - 97%) * 0.35 * var(--bg-lt, 0)));
     --card-text: #1c1c24;
     --card-sub: #6a6a78;
     --input-placeholder: #5c616b;
     --key-subtext: #5c616b;
-    --accent-text: #086d49;
-    --line: #d0d3db;
+    --accent-text: hsl(var(--key-hue) calc(70% * var(--key-sat, 1)) calc(26% + (100% - 26%) * 0.75 * var(--key-lt, 0)));
+    --accent-ink: hsl(var(--key-hue) calc(45% * var(--key-sat, 1)) calc(95% + (100% - 95%) * 0.75 * var(--key-lt, 0)));
+    --line: hsl(var(--bg-hue) calc(26% * var(--bg-sat, 1)) calc(82% + (100% - 82%) * 0.35 * var(--bg-lt, 0)));
     --scrim: #ffffffb0;
-    --mod-active-bg: #d7f0e4;
+    --mod-active-bg: hsl(var(--key-hue) calc(55% * var(--key-sat, 1)) calc(89% + (100% - 89%) * 0.75 * var(--key-lt, 0)));
 }
+
+/* ===== #31 预置色调：六预置=六个固定 --kb-hue（classic=默认绿 160），
+ * 整套令牌由 :root/.theme-light 的 hsl 派生接管——v1 只换 accent 三
+ * 件套被用户实测「只影响少部分按键」。hue 取各预置 v1 主色的色相：
+ * ocean #4da3ff→212、violet #a78bfa→255、amber #ff9f45→27、sakura
+ * #ff8fb1→344、teal #2ec8c8→180。内联 --kb-hue（自定义滑条）胜过这
+ * 里的属性选择器，设置页滑条动过即覆盖预置。 */
+html[data-preset="ocean"]  { --kb-hue: 212; }
+html[data-preset="violet"] { --kb-hue: 255; }
+html[data-preset="amber"]  { --kb-hue: 27; }
+html[data-preset="sakura"] { --kb-hue: 344; }
+html[data-preset="teal"]   { --kb-hue: 180; }
+
 
 html.theme-dark {
     color-scheme: dark;
@@ -85,32 +115,31 @@ html.theme-dark {
 @media (prefers-color-scheme: light) {
     html:not(.theme-light):not(.theme-dark) {
         color-scheme: light;
-        --key-rgb: 252 252 252;
-        --special-rgb: 183 187 196;
-        --pressed-rgb: 236 238 242;
-        --bg: #e2e3e8;
-        --key: rgb(var(--key-rgb) / var(--key-alpha));
-        --special: rgb(var(--special-rgb) / var(--key-alpha));
-        --pressed: rgb(var(--pressed-rgb) / var(--key-alpha));
+        --key: hsl(var(--key-hue) calc(38% * var(--key-sat, 1)) calc(97% + (100% - 97%) * 0.75 * var(--key-lt, 0)) / var(--key-alpha));
+        --special: hsl(var(--key-hue) calc(42% * var(--key-sat, 1)) calc(72% + (100% - 72%) * 0.75 * var(--key-lt, 0)) / var(--key-alpha));
+        --pressed: hsl(var(--key-hue) calc(38% * var(--key-sat, 1)) calc(92% + (100% - 92%) * 0.75 * var(--key-lt, 0)) / var(--key-alpha));
+        --bg: hsl(var(--bg-hue) calc(32% * var(--bg-sat, 1)) calc(88% + (100% - 88%) * 0.35 * var(--bg-lt, 0)));
         --text: #181818;
         --muted: #5c616b; /* See html.theme-light */
-        --accent: #23c890;
+        --accent: hsl(var(--key-hue) calc(62% * var(--key-sat, 1)) calc(42% + (100% - 42%) * 0.75 * var(--key-lt, 0)));
+    --accent-strong: hsl(var(--key-hue) calc(62% * var(--key-sat, 1)) calc(30% + (100% - 30%) * 0.75 * var(--key-lt, 0)));
         --danger: #d93025;
         --recording: #e5484d;
-        --panel: #f4f5f7;
-        --panel-rgb: 244 245 247;
-        --pill: #ffffff;
-        --logo-bg: #fcfcfc;
-        --icon: #787878;
-        --card-bg: #f7f7fa;
+        --panel: hsl(var(--bg-hue) calc(34% * var(--bg-sat, 1)) calc(95% + (100% - 95%) * 0.35 * var(--bg-lt, 0)));
+        --panel-a: hsl(var(--bg-hue) calc(34% * var(--bg-sat, 1)) calc(95% + (100% - 95%) * 0.35 * var(--bg-lt, 0)) / var(--key-alpha));
+        --pill: hsl(var(--bg-hue) calc(45% * var(--bg-sat, 1)) calc(99% + (100% - 99%) * 0.35 * var(--bg-lt, 0)));
+        --logo-bg: hsl(var(--bg-hue) calc(20% * var(--bg-sat, 1)) calc(99% + (100% - 99%) * 0.35 * var(--bg-lt, 0)));
+        --icon: hsl(var(--bg-hue) calc(5% * var(--bg-sat, 1)) calc(47% + (100% - 47%) * 0.35 * var(--bg-lt, 0)));
+        --card-bg: hsl(var(--bg-hue) calc(18% * var(--bg-sat, 1)) calc(97% + (100% - 97%) * 0.35 * var(--bg-lt, 0)));
         --card-text: #1c1c24;
         --card-sub: #6a6a78;
         --input-placeholder: #5c616b;
         --key-subtext: #5c616b;
-        --accent-text: #086d49;
-        --line: #d0d3db;
+        --accent-text: hsl(var(--key-hue) calc(70% * var(--key-sat, 1)) calc(26% + (100% - 26%) * 0.75 * var(--key-lt, 0)));
+    --accent-ink: hsl(var(--key-hue) calc(45% * var(--key-sat, 1)) calc(95% + (100% - 95%) * 0.75 * var(--key-lt, 0)));
+        --line: hsl(var(--bg-hue) calc(26% * var(--bg-sat, 1)) calc(82% + (100% - 82%) * 0.35 * var(--bg-lt, 0)));
         --scrim: #ffffffb0;
-        --mod-active-bg: #d7f0e4;
+        --mod-active-bg: hsl(var(--key-hue) calc(55% * var(--key-sat, 1)) calc(89% + (100% - 89%) * 0.75 * var(--key-lt, 0)));
     }
 }
 
@@ -123,7 +152,21 @@ body {
     font-family: system-ui, "Noto Sans CJK SC", sans-serif;
     user-select: none;
     -webkit-user-select: none;
+    /* 长按浮层不收起（#7）：系统长按 ~500ms 触发 WebView 文本选择/
+     * callout 菜单时触摸流被直接终止（touchend/cancel 都不再发），
+     * 长按弹层拿不到收场事件就悬挂。设置页同款防线（2940168 AVD
+     * 双通道取证）补到键盘页；user-select 管不到 callout，须此项。
+     * JS 层 contextmenu preventDefault 双保险（keyboard.js）。 */
+    -webkit-touch-callout: none;
     -webkit-tap-highlight-color: transparent;
+}
+
+/* #7 配套：面板里的可编辑目标要系统长按菜单（粘贴），恢复默认
+ * callout——body 级 none 会连它们一起压掉（codex 评审 P2）。 */
+body textarea,
+body input,
+body [contenteditable] {
+    -webkit-touch-callout: default;
 }
 button { font: inherit; }
 
@@ -162,7 +205,19 @@ button { font: inherit; }
 /* D: --safe-bottom (native gesture-nav inset, CSS px) lifts the
  * rows above the gesture strip in both orientations; the keyboard background
  * fills the gap. */
-body.landscape #softKeyboard { padding: 4px 4px calc(4px + var(--safe-bottom, 0px) + var(--kb-bottom-pad, 0px)); }
+/* #39 挖孔安全区：padding 落在 #softKeyboard 上（背景默认铺满 padding 区，
+ * 同单手模式语义）——键区给挖孔侧让位，背景仍铺到屏幕边。开关关闭时
+ * JS 侧把 --safe-side-* 清 0，键也铺满。 */
+body.landscape #softKeyboard {
+    padding: 4px calc(4px + var(--safe-side-r, 0px))
+        calc(4px + var(--safe-bottom, 0px) + var(--kb-bottom-pad, 0px))
+        calc(4px + var(--safe-side-l, 0px));
+}
+
+/* #39 横屏整体不透明度：含背景在内的整层透明（想看被盖住的内容时用）。
+ * 仅横屏选择器生效；窗口涂层（导航栏/底部条）由 native applyChromeColor
+ * 同步转透明。 */
+body.landscape #softKeyboard { opacity: var(--kb-landscape-opacity, 1); }
 
 /* Engine lifecycle notice (mode-fallback §2.3): fills the candidate
  * slot while the engine warms up ("正在准备语言数据…") or a degrade
@@ -216,7 +271,7 @@ body.landscape #candidateBar .tool,
 body.landscape #settingsPageBar .tool { width: 30px; height: 30px; }
 body.landscape #candidates { min-height: 40px; }
 body.landscape .candidate { min-height: 40px; line-height: normal; font-size: calc(16px * var(--cand-font-scale, 1)); display: flex; align-items: center; }
-body.landscape .kb-row { gap: 4px; margin-bottom: 3px; }
+body.landscape .kb-row { margin-bottom: 3px; }
 body.landscape #symCatBar { margin-top: 3px; gap: 4px; }
 
 /* Composing preedit（issue #8 定稿）：拼音悬浮在顶部 padding 带里
@@ -520,15 +575,15 @@ body[data-preedit-font="xlarge"] { --preedit-font-scale: 1.35; --preedit-band: 2
  * title on the left, close on the right, all in .tool pill styling; the
  * regular tools (logo, gear, clipboard, favorites, mic, hide, strip) hide
  * while a sub-page is up. */
-#settingsPageBar {
+#settingsPageBar, #statsPageBar {
     display: none;
     flex: 1;
     min-width: 0;
     align-items: center;
     gap: 8px;
 }
-#settingsPageBar .tool { flex: none; width: 32px; height: 32px; }
-#settingsPageBar .page-title {
+#settingsPageBar .tool, #statsPageBar .tool { flex: none; width: 32px; height: 32px; }
+#settingsPageBar .page-title, #statsPageBar .page-title {
     flex: 1;
     min-width: 0;
     font-size: 13px;
@@ -539,6 +594,12 @@ body[data-preedit-font="xlarge"] { --preedit-font-scale: 1.35; --preedit-band: 2
     text-overflow: ellipsis;
 }
 body.settings-page #settingsPageBar { display: flex; }
+/* #41 统计浮层：工具栏换成标题+✕（settingsPageBar 同款互斥形态——
+ * 常规工具全藏，统计面板外的任何界面不可能再叠上来）。 */
+body.stats-page #statsPageBar { display: flex; }
+body.stats-page #candidates,
+body.stats-page #candidateBar > .tool,
+body.settings-page #statsPageBar { display: none; }
 /* 子页打开时隐藏所有常规工具——直接子元素级选择器，动态开关工具
  * （toolTheme 等五个）自动覆盖，新增工具也不会再漏（真机翻车：逐 id
  * 枚举漏掉动态按钮，「输入法快捷切换」子页标题栏边上挂着一颗色彩
@@ -548,7 +609,7 @@ body.settings-page #candidateBar > .tool { display: none; }
 /* [hidden] must win even against the settings-page swap (lint R2). */
 #setupButton[hidden], #fullSetupButton[hidden], #clipboardButton[hidden],
 #favoritesButton[hidden], #hide[hidden], #settingsPageBar[hidden],
-#ctrlTool[hidden], #imeSwitchButton[hidden] {
+#ctrlTool[hidden], #imeSwitchButton[hidden], #statsPageBar[hidden] {
     display: none !important;
 }
 /* Author display:flex beats the UA [hidden] rule - compose controls and the
@@ -603,10 +664,8 @@ body.settings-page #candidateBar > .tool { display: none; }
  * 用户定稿（2026-09-20）：不做任何「这是联想」的降调标识——不加灰字、
  * 不加圆点/角标，样式全部继承 .candidate。class 名保留供测试定位。 */
 
-/* 候选字号档位（issue #2）：hello 带来的 body[data-cand-font] 只缩放
- * 文字，不动 34px 行高预算（扩到 2 档以上会挤压行高，另行设计）。 */
-body[data-cand-font="large"] { --cand-font-scale: 1.2; }
-body[data-cand-font="xlarge"] { --cand-font-scale: 1.35; }
+/* 候选字号（issue #42）：JS 直写 --cand-font-scale（80-150% 连续），
+ * data 属性仅作测试锚点，不再驱动缩放；34px 行高预算不动。 */
 .candidate:active, .candidate.active-touch { background: var(--pressed); }
 /* First candidate: accent text on a pill (both themes, reference behaviour). */
 .candidate.first { color: var(--accent-text); background: var(--pill); }
@@ -616,14 +675,42 @@ body[data-cand-font="xlarge"] { --cand-font-scale: 1.35; }
 #mic.stopping { opacity: .55; }
 #mic.error { color: var(--danger); }
 #mic[disabled] { opacity: .35; }
-@keyframes pulse { 50% { box-shadow: inset 0 0 0 1.5px var(--accent), 0 0 12px #23c89066; } }
+@keyframes pulse { 50% { box-shadow: inset 0 0 0 1.5px var(--accent), 0 0 12px hsl(var(--key-hue) calc(62% * var(--key-sat, 1)) 48% / 0.4); } }
 
 /* ===== Key layers ===== */
 /* The row gap drops to 5px (a third tighter) - the freed
  * height funds the taller candidate bar. */
-.kb-row { display: flex; gap: 5px; margin-bottom: 5px; }
+/* 行内缝与缩进提成变量（#59 行对齐公式引用同一来源，竖屏/横屏
+ * 改一处即可）。 */
+body { --kb-gap: 5px; --kb-indent: 4.9%; }
+body.landscape { --kb-gap: 4px; }
+.kb-row { display: flex; gap: var(--kb-gap); margin-bottom: 5px; }
 .kb-row:last-child { margin-bottom: 0; }
-.kb-row.kb-indent { padding: 0 4.9%; }
+.kb-row.kb-indent { padding: 0 var(--kb-indent); }
+/* #59 26 键行对齐：第三行字母键与第二行（缩进行）同宽，z..m 精确
+ * 落在 s..k 之上（左功能键宽 = 缩进 + 一个字母，与旧版 z 的视觉位
+ * 一致），差值由退格 flex:1 吸收（Gboard 中文键面同款宽退格）。
+ * 类名按第二行几何：qwerty 家族 9 字母 8 缝、俄语 11 字母 10 缝。 */
+.kb-align-9 > .kb-letter { width: calc((100% - 2 * var(--kb-indent) - 8 * var(--kb-gap)) / 9); flex: none; }
+.kb-align-9 > .kb-mod { width: calc(var(--kb-indent) + (100% - 2 * var(--kb-indent) - 8 * var(--kb-gap)) / 9); flex: none; }
+.kb-align-9 > .kb-special { flex: 1; }
+.kb-align-11 > .kb-letter { width: calc((100% - 2 * var(--kb-indent) - 10 * var(--kb-gap)) / 11); flex: none; }
+.kb-align-11 > .kb-mod { width: calc(var(--kb-indent) + (100% - 2 * var(--kb-indent) - 10 * var(--kb-gap)) / 11); flex: none; }
+.kb-align-11 > .kb-special { flex: 1; }
+/* 14 键贴合（kb-align-dp14）：第二行 5 键帽 4 缝共 9 半键。第三行
+ * 半键/键帽显式定宽与第二行等宽（消漂移），差值由两侧功能键均分。 */
+.kb-align-dp14 > .kb-letter { width: calc((100% - 2 * var(--kb-indent) - 4 * var(--kb-gap)) / 9); flex: none; }
+.kb-align-dp14 > .merge-pair { width: calc(2 * (100% - 2 * var(--kb-indent) - 4 * var(--kb-gap)) / 9); flex: none; }
+/* #36 双拼 14 键（验收反馈三轮）：相邻两字母贴合为一颗宽键帽——
+ * 触摸判定保持半区（半区宽 ≥ 原 26 键键宽，分界无歧义）；中间一道
+ * 分割线区分两个半区，每颗半区键保留自己的居中字母与上滑小字
+ * （韵母小字仍不显示：键面溢出，方案键位图在设置页有）。 */
+.merge-pair { flex: 2; min-width: 0; display: flex; }
+.merge-pair .kb-key { flex: 1; min-width: 0; border-radius: 0; }
+.merge-pair .kb-key:first-child { border-radius: var(--radius-key) 0 0 var(--radius-key); }
+.merge-pair .kb-key:last-child { border-radius: 0 var(--radius-key) var(--radius-key) 0; }
+/* 分割线：面板底色细缝，视觉上等同键间 gap 的窄化版。 */
+.merge-pair .kb-key + .kb-key { border-left: 2px solid var(--panel); }
 /* Key height is the tunable variable (default 44). */
 .kb-key, .sym-tab {
     flex: 1;
@@ -633,7 +720,8 @@ body[data-cand-font="xlarge"] { --cand-font-scale: 1.35; }
     border: 0;
     border-radius: var(--radius-key);
     background: var(--key);
-    color: var(--text);
+    /* #61 review P1：键面亮度偏移过大时白字对比崩，JS 设 --key-ink 翻深墨；缺省回落 --text。 */
+    color: var(--key-ink, var(--text));
     font-size: 13px;
     font-weight: 550;
     display: flex;
@@ -647,6 +735,23 @@ body[data-cand-font="xlarge"] { --cand-font-scale: 1.35; }
  * shorter shrinks the font too - nothing overflows the key face). */
 .kb-main { font-size: min(22px, calc(var(--kb-row-h, 44px) * 0.5)); line-height: 1; font-weight: 400; }
 .kb-alt { color: var(--muted); font-size: 9px; line-height: 1; font-weight: 400; }
+/* 上下滑互换（issue #29-2）：小字提示跟着翻到主字下方（提示的是下滑值）；
+ * 标点槽是墨形绝对定位，主字（inset 42%/12%）与 alt 要一起上下镜像，
+ * 只翻 alt 会两个墨形挤在下半键（验收 2026-09-24 实录）。 */
+body.flick-swap .kb-key.kb-letter { flex-direction: column-reverse; }
+/* #39-3（间距）：角标钉键顶 3px、主字沉键底（上方留 4px）——两者分
+ * 离到键的两端，任意行高都不重叠。1.3.1 首版只钉了角标、主字仍居
+ * 中，44px 行高下主字上半与角标重叠约 2px（用户实测「y/6 上下间距
+ * 也更小了」「显示重叠」）；更早的整体居中布局角标贴主字太近也是同
+ * 一诉求（拉开间距）。互换布局（column-reverse）镜像：角标钉底、主
+ * 字浮顶。 */
+.kb-key.kb-letter { position: relative; justify-content: flex-end; padding-bottom: 4px; }
+.kb-key.kb-letter .kb-alt { position: absolute; top: 3px; left: 0; right: 0; }
+body.flick-swap .kb-key.kb-letter { justify-content: flex-end; padding-top: 4px; padding-bottom: 0; }
+body.flick-swap .kb-key.kb-letter .kb-alt { top: auto; bottom: 3px; }
+body.flick-swap .kb-key[data-key="."] .kb-alt { top: auto; bottom: 4px; }
+body.flick-swap .kb-key.zh-punct .kb-main { inset: 12% 0 42%; }
+body.flick-swap .kb-key.zh-punct .kb-alt { top: auto; bottom: 12%; }
 /* Follow-up: an armed Fn key turns its twelve letter caps into
  * F1..F12. Keep the label on one line and let the single visible glyph use
  * the key's normal centring; F10 is the widest label at the narrowest key. */
@@ -654,6 +759,15 @@ body[data-cand-font="xlarge"] { --cand-font-scale: 1.35; }
 .kb-key.fn-label .kb-main {
     font-size: min(16px, calc(var(--kb-row-h, 44px) * 0.38));
     white-space: nowrap;
+}
+/* alt 隐藏后回中：flick-swap 起字母键是 alt 上/main 下的底锚
+ * （justify-content:flex-end + padding-bottom），沿用初版的「正常
+ * 居中」在底锚布局里变成低于键心 ~11px（9m Fn lock 断言抓到的存量
+ * 回归）。显式回中，并压掉两个方向的 flick padding。 */
+.kb-key.kb-letter.fn-label {
+    justify-content: center;
+    padding-top: 0;
+    padding-bottom: 0;
 }
 .kb-special { background: var(--special); font-size: min(15px, calc(var(--kb-row-h, 44px) * 0.34)); font-weight: 500; }
 .kb-mod.active, .kb-mod.locked { color: var(--accent-text); background: var(--mod-active-bg, #103a24); box-shadow: inset 0 0 0 1px var(--accent); }
@@ -722,7 +836,7 @@ body[data-cand-font="xlarge"] { --cand-font-scale: 1.35; }
     bottom: 3px;
     font-size: 9px;
     font-weight: 400;
-    color: var(--key-subtext);
+    color: var(--key-ink, var(--key-subtext));
 }
 /* 方向 category: two text rows top-aligned inside the three-row slot. */
 .sym-arrows {
@@ -746,13 +860,163 @@ body[data-cand-font="xlarge"] { --cand-font-scale: 1.35; }
 /* 分词 (syllable separator) rides in the Shift slot of Chinese layouts. */
 .sep { font-size: 14px; font-weight: 500; }
 .kb-layer[hidden] { display: none; }
-.kb-layer { flex: 1; display: flex; flex-direction: column; justify-content: space-between; }
+.kb-layer { flex: 1; min-height: 0; display: flex; flex-direction: column; justify-content: space-between; }
 #symGrid { flex: 1; display: flex; flex-direction: column; justify-content: space-between; }
 #symGrid .kb-row:last-child { margin-bottom: 0; }
 
 /* ===== 九宫格数字键盘（长按 123，design §2.6）===== */
 #numPadLayer { display: flex; flex-direction: column; }
 #numPadLayer[hidden] { display: none; }
+/* ===== #39-10 编辑工具条（搜狗「文字编辑」形态）=====
+ * in-flow 替换键区（同 settingsPanel/panelLayer 机制），工具栏保留。
+ * 四行高度全部走 --kb-row-h（与 t9-grid 同法），横屏自动压缩。
+ * grid areas：↑ 跨三列居中、← 扩选 →、↓ 跨三列、底行 行首/全选/行尾；
+ * 第四列 = 右侧竖排 删除/复制/剪切/粘贴。 */
+#editLayer { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+#editLayer[hidden] { display: none; }
+/* 法语候选大小写循环的 shift 指示（cap=单档亮，upper=锁定亮）。 */
+.kb-mod.shift.case-cap { box-shadow: inset 0 0 0 2px var(--accent); }
+.kb-mod.shift.case-upper {
+    box-shadow: inset 0 0 0 2px var(--accent);
+    background: var(--accent);
+    color: var(--accent-ink);
+}
+
+/* --- #41 输入统计浮层 -------------------------------------------------- */
+.stats-wrap {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 10px 14px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+.stats-hero { text-align: center; padding: 2px 0 0; }
+.stats-hero-label { font-size: 11px; color: var(--muted); letter-spacing: .12em; }
+.stats-total {
+    font-size: 38px;
+    font-weight: 700;
+    line-height: 1.15;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+}
+.stats-total-unit { font-size: 13px; font-weight: 400; color: var(--muted); margin-left: 4px; }
+.stats-sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.stats-sub b { color: var(--text); font-weight: 650; }
+.stats-cards { display: flex; gap: 8px; }
+.stats-card {
+    flex: 1;
+    padding: 8px 4px;
+    border-radius: 8px;
+    background: var(--panel);
+    text-align: center;
+}
+.stats-card-v { font-size: 16px; font-weight: 650; color: var(--text); font-variant-numeric: tabular-nums; }
+.stats-card-k { font-size: 10px; color: var(--muted); margin-top: 1px; }
+.stats-bars {
+    display: flex;
+    align-items: flex-end;
+    gap: 6px;
+    height: 58px;
+    padding: 0 2px;
+}
+.stats-bar-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; height: 100%; }
+.stats-bar {
+    width: 100%;
+    flex: 1;
+    max-height: 100%;
+    border-radius: 3px 3px 0 0;
+    background: var(--key);
+    transform-origin: bottom;
+    transform: scaleY(0);
+    transition: transform .55s cubic-bezier(.2, .85, .3, 1);
+    min-height: 3px;
+}
+.stats-bar.today { background: var(--accent); }
+.stats-wrap.grown .stats-bar { transform: scaleY(1); }
+.stats-bar-dow { font-size: 9px; color: var(--muted); }
+.stats-bar-dow.today { color: var(--accent-text); font-weight: 650; }
+.stats-fun {
+    font-size: 11px;
+    color: var(--muted);
+    text-align: center;
+    line-height: 1.6;
+}
+.stats-fun b { color: var(--text); }
+.stats-badges { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; }
+.stats-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    font-size: 10px;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+}
+.stats-badge .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--line); }
+.stats-badge.earned {
+    border-color: var(--accent);
+    color: var(--accent-ink);
+    background: var(--accent);
+    font-weight: 650;
+}
+.stats-badge.earned .dot { background: var(--accent-ink); }
+.stats-wrap.grown .stats-badge.earned { animation: stats-pop .4s cubic-bezier(.2, .85, .3, 1.2) backwards; }
+@keyframes stats-pop {
+    0% { transform: scale(.3); opacity: 0; }
+    70% { transform: scale(1.12); }
+    100% { transform: scale(1); opacity: 1; }
+}
+
+.edit-grid {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: 1fr 1.2fr 1fr 1.3fr;
+    /* 行高 ≥ 键行基准且平分键区余量（t9 撑 --kb-row-h 是模式总高的事，
+     * qwerty 槽位下编辑面板自己吃满整个键区高度，不再露出底部空白）。 */
+    grid-template-rows: repeat(4, minmax(var(--kb-row-h, 44px), 1fr));
+    grid-template-areas:
+        "up    up    up    del"
+        "left  sel   right copy"
+        "down  down  down  cut"
+        "home  all   end   paste";
+    gap: 5px;
+}
+.edit-grid .kb-key {
+    flex: none;
+    min-width: 0;
+    height: 100%;
+}
+.edit-grid .kb-key[data-edit="up"] { grid-area: up; }
+.edit-grid .kb-key[data-edit="down"] { grid-area: down; }
+.edit-grid .kb-key[data-edit="left"] { grid-area: left; }
+.edit-grid .kb-key[data-edit="right"] { grid-area: right; }
+.edit-grid .kb-key[data-edit="sel"] { grid-area: sel; }
+.edit-grid .kb-key[data-edit="home"] { grid-area: home; }
+.edit-grid .kb-key[data-edit="all"] { grid-area: all; }
+.edit-grid .kb-key[data-edit="end"] { grid-area: end; }
+.edit-grid .kb-key[data-edit="del"] { grid-area: del; }
+.edit-grid .kb-key[data-edit="copy"] { grid-area: copy; }
+.edit-grid .kb-key[data-edit="cut"] { grid-area: cut; }
+.edit-grid .kb-key[data-edit="paste"] { grid-area: paste; }
+/* 方向箭头大字；「选择」是面板内 toggle（点亮 = 方向键带 SHIFT），
+ * 锁定态用 accent 实底（验收反馈：细描边不够明显）——与粘滞键的
+ * armed 绿同语言但更满：底色 + 反差字，一眼锁定。 */
+.edit-grid .kb-key[data-arrow] { font-size: min(22px, calc(var(--kb-row-h, 44px) * 0.5)); font-weight: 400; }
+.edit-grid .kb-key[data-edit="sel"].armed {
+    color: var(--accent-ink);
+    background: var(--accent-strong);
+    font-weight: 650;
+    box-shadow: inset 0 0 0 2px var(--accent);
+}
+/* 右列文字键：主字 14px 与特殊键一致。 */
+.edit-grid .kb-key.edit-word { font-size: min(15px, calc(var(--kb-row-h, 44px) * 0.34)); font-weight: 500; }
+/* 横屏：行距收紧（t9-grid 同款）。 */
+body.landscape .edit-grid { gap: 4px 5px; }
 .num-grid {
     flex: 1;
     min-height: 0;
@@ -793,7 +1057,7 @@ body[data-cand-font="xlarge"] { --cand-font-scale: 1.35; }
 .num-back {
     grid-row: 4;
     grid-column: 1;
-    background: var(--accent);
+    background: var(--accent-strong);
     color: var(--accent-ink);
 }
 .num-digit { font-size: min(26px, calc(var(--kb-row-h, 44px) * 0.6)); font-weight: 400; }
@@ -858,7 +1122,7 @@ body[data-cand-font="xlarge"] { --cand-font-scale: 1.35; }
     top: 2px;
     right: 7px;
     font-size: 10px;
-    color: var(--key-subtext);
+    color: var(--key-ink, var(--key-subtext));
 }
 /* 字母组主字形不加重——kb-key 的 550 在大号字母组上显得过粗（用户反馈） */
 .t9-group { font-size: min(20px, calc(var(--kb-row-h, 44px) * 0.46)); font-weight: 400; }
@@ -868,7 +1132,7 @@ body[data-cand-font="xlarge"] { --cand-font-scale: 1.35; }
     top: 2px;
     left: 5px;
     font-size: 10px;
-    color: var(--key-subtext);
+    color: var(--key-ink, var(--key-subtext));
     letter-spacing: 1px;
 }
 /* 底行：123 与中英各 2/3 键宽，省出的空间全给 mic/空格（5/3 键宽）。 */
@@ -894,7 +1158,39 @@ body[data-cand-font="xlarge"] { --cand-font-scale: 1.35; }
 #keyPopupInner.t9-grid3 .kp-row { display: flex; gap: 5px; justify-content: center; }
 #keyPopupInner.t9-grid3 .kp-item { background: var(--key); box-shadow: none; }
 /* 选中格必须压回上面的 ID 优先级覆盖，否则高亮只剩深色文字看不见。 */
-#keyPopupInner.t9-grid3 .kp-item.sel { background: var(--accent); }
+#keyPopupInner.t9-grid3 .kp-item.sel { background: var(--accent-strong); }
+/* 手写符号键下方抽出的候选条（round-5）：纵向单列、与键同宽，从键
+ * 下沿向下展开——T9/数字面板左列符号条的形态，不再盖住书写区（四轮
+ * 上滑弹层的核心抱怨）。格子压着键宽铺满；下方空间不足时 JS 把整条
+ * 翻到键上方并限高，格子按 min 高度压缩（键盘视口内永不裁切）。
+ * 选中格用 .sel，无预选格。 */
+#keyPopupInner.kp-drawer {
+    max-width: none;
+    flex-wrap: nowrap;
+    flex-direction: column;
+    gap: 3px;
+    padding: 4px;
+    border-radius: 12px;
+    background: var(--panel);
+    box-shadow: 0 6px 24px #000c;
+    overflow: hidden;
+}
+#keyPopupInner.kp-drawer .kp-item {
+    width: auto;
+    min-height: 24px;
+    max-height: 44px;
+    flex: 1 1 auto;
+    background: var(--key);
+    box-shadow: none;
+    font-size: 17px;
+}
+#keyPopupInner.kp-drawer .kp-item.sel { background: var(--accent-strong); color: var(--accent-ink); }
+/* 抽出动画：从键沿向下滑出（transform 不参与定位，弹层位置仍由
+ * JS 的 left/top 决定）。 */
+@keyframes ink-drawer {
+    from { transform: translateY(-10px); opacity: 0.35; }
+}
+#keyPopup.kp-drawer.open { animation: ink-drawer 0.13s ease-out; }
 /* 滑出浮层卡片边界时的「松手撤销」提示（showPopupCancelTip 挂在浮层
  * 上方中线，不跟手）。卡片底色 + 描边：黑底白字在暗色键盘上看不清。 */
 #keyPopupCancelTip {
@@ -919,6 +1215,180 @@ body[data-cand-font="xlarge"] { --cand-font-scale: 1.35; }
 body.landscape .t9-grid { gap: 4px 5px; }
 /* T9 空格键：长按圆点（::after）挪到左上角，右上角留给字面 0 角标。 */
 #spaceKey.t9-space::after { right: auto; left: 3px; }
+/* ===== 手写键面（issue #28，design/handwriting.md）：round-3 起为
+ * wetype 形态——书写面板是主区（.ink-main 里唯一的弹性块），右侧窄列
+ * 退格+，。！？（round-5），底行 符号/数字/空格/快捷切换/换行。竖屏目标宽高比
+ * 1.6:1（wetype 984×590 口径）——键盘总高由 JS 推到 chrome + 底行 +
+ * 主区（applyModeHeight）。底行高固定 --ink-row-h（JS 单一来源写入），
+ * 不吃 --kb-row-h 预算：applyHeight 在视图被瞬时量高时烘焙出的陈旧行
+ * 变量再也压不塌书写区（重唤折叠 P1 的根因通道被结构性拆除）。
+ * 横屏总高被 native 钳在半屏、纵向没有底行的余量：右列改两列四行
+ * （.ink-rail，底行键并入），键盘切换键不占格（中英键留守=模式出口）。
+ * ===== */
+.ink-layout {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+.ink-main {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    gap: 5px;
+}
+.ink-pad {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    border-radius: var(--radius-key);
+    background: var(--key);
+    overflow: hidden;
+}
+/* 右窄列（round-6 用户拍板）：退格固定 1 格 + 滚动符号列（视口 3 格），
+ * 总高与 4 键等分一致。符号列是常驻滚动列表（T9/数字面板左列同款）：
+ * 上滑滚出更多，点按直上屏。 */
+.ink-side {
+    flex: none;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    width: 58px;
+}
+/* 高度统一（round-6）后的结构性兜底：键盘内容永不越出 view——
+ * 矮高度下手写链的任何溢出都被裁在 view 内。 */
+#softKeyboard { overflow: hidden; }
+.ink-layout { overflow: hidden; }
+.ink-scroll {
+    /* 4 键等分里的 3 份（退格拿 1 份，见 .ink-side > .kb-key）。 */
+    flex: 3;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    /* 与 .t9-strip 同款：列内原生滚动。列上和格上都必须放行 pan-y
+     * （格是 .kb-key，基类声明的 none 会把整列拖死——真机实录：
+     * overflow-y:auto 形同虚设）。 */
+    touch-action: pan-y;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+}
+.ink-scroll::-webkit-scrollbar { display: none; }
+/* 滚动会让 Chromium 给滚动容器自身发焦点，系统 outline（部分 ROM 是
+ * 橙色粗圈）会箍住整列——真机实录。IME 视图没有键盘导航场景，直接压掉。 */
+.ink-scroll:focus { outline: none; }
+/* 特异性必须压过文件后段的 `.ink-side .kb-key { flex:1 }`（否则 12 格
+ * 被均分成 1px 线全挤进视口——真机实录）。格高 = 视口剥掉 2 条格缝后
+ * 三等分，与退格的 calc((100% - 15px)/4) 数学上严格同高。字号跟格高
+ * 走（inkResize 量视口写 --ink-sym-size），矮高度下不再裁字。 */
+.ink-side .ink-scroll .kb-key {
+    flex: none;
+    height: calc((100% - 10px) / 3);
+    touch-action: pan-y;
+    font-size: var(--ink-sym-size, 22px);
+    line-height: 1;
+}
+/* 底行：符号/数字/空格（宽）/键盘切换/换行，高固定（--ink-row-h）。 */
+.ink-bottom {
+    flex: none;
+    display: flex;
+    gap: 5px;
+    /* 键高 JS 写入（--ink-row-h），缺省值仅兜 mock/旧 DOM。 */
+    height: var(--ink-row-h, 46px);
+}
+/* 窄列/底行的键高不消费 --kb-row-h：键盘高度调节的弹性全部留给
+ * 书写面板（§8.4 结构性解耦在本键面的体现）。 */
+.ink-side .kb-key,
+.ink-bottom .kb-key,
+.ink-rail .kb-key {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    height: auto;
+}
+.ink-bottom .kb-key { height: var(--ink-row-h, 46px); }
+/* 退格 4 键等分的 1 份（round-6 终稿实修）：此前退格与滚动列同为
+ * flex:1 对半分列高——退格虚高近一倍、符号格被压成细缝的根因。
+ * 特异性与上面 `.ink-side .kb-key` 同为 (0,2,0)，靠文件顺序压过。
+ * 列高 H = 4k + 3g（g=5px 缝），故 k = (H-15px)/4。 */
+.ink-side > .kb-key {
+    flex: none;
+    height: calc((100% - 15px) / 4);
+}
+/* 空格不再是底行的大头（round-4 反馈：空格短一点，宽度让给换行）：
+ * flex 2 让其余四键与右窄列同宽（58px 量级），换行不再是最窄的键。 */
+.ink-bottom #spaceKey { flex: 2; }
+.ink-punct { font-size: 22px; }
+body.landscape .ink-layout { flex-direction: row; }
+/* 横屏右列：退格/， ‖ 。/中英 ‖ 符号/123 ‖ 空格/换行 两列四行。 */
+body.landscape .ink-rail {
+    flex: none;
+    display: flex;
+    flex-flow: row wrap;
+    align-content: stretch;
+    gap: 4px;
+    width: 116px;
+    margin-left: 4px;
+}
+body.landscape .ink-rail .kb-key {
+    flex: 0 0 calc(50% - 2px);
+    height: calc(25% - 3px);
+}
+.ink-canvas {
+    /* 绝对定位铺满书写区：canvas 是替换元素，静态布局会把位图尺寸
+     * （inkResize 按 devicePixelRatio 写入的 width/height 属性）当作
+     * 固有高度顶进 flex——键盘窗口变矮后（编辑框上移/旋转/拖高）书写区
+     * 缩不回去，底行被推出窗外（AVD 实测 pad 底到 567 > 视口 472）。 */
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    /* 书写区不是滚动容器：封死浏览器默认手势（长按选择/双击缩放），
+     * 笔迹事件全部 preventDefault。 */
+    touch-action: none;
+    -webkit-user-select: none;
+    user-select: none;
+}
+.ink-hint {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    text-align: center;
+    color: var(--muted);
+    font-size: 13px;
+    pointer-events: none;
+}
+/* 三行提示（round-5）：首行是动作主行（稍大、略强），后两行是预期
+ * 管理（能力边界 / 连笔影响识别率），弱化缩进次级。 */
+.ink-hint .ink-hint-line { display: block; }
+.ink-hint .ink-hint-line:first-child {
+    font-size: 15px;
+    color: var(--text);
+    opacity: 0.72;
+}
+.ink-hint .ink-hint-line + .ink-hint-line {
+    margin-top: 4px;
+    font-size: 12px;
+    opacity: 0.85;
+}
+/* 落笔后提示让位（.writing 由 bindInkPad 控制）——识别结果在候选条，
+ * 书写区不额外画 loading 态（design §5.2）。 */
+.ink-pad.writing .ink-hint { opacity: 0; }
+/* 手写候选态的整行互斥（wetype 形态）：左侧模式标识。候选条自持滚动，
+ * 标识是 #candidateBar 行内 #candidates 之前的独立节点，不随滚动漂移。 */
+.ink-tag {
+    flex: none;
+    font-size: 13px;
+    font-weight: 650;
+    color: var(--accent-text);
+    white-space: nowrap;
+}
 /* Emoji sub-view: snapping page scroller over the category strip.
  * No edge mask - the pages are exactly full width and a mask would dim
  * the first/last emoji column. */
@@ -972,14 +1442,14 @@ body.landscape .num-grid { gap: 3px; }
 .kb-key[data-lp="lock"],
 .kb-key[data-lp="numpad"],
 .kb-key[data-lp="mode-menu"],
-.kb-key[data-lp="voice-hold"],
+.kb-key[data-lp="space-hold"],
 #ctrlLayer .ctrl-mod {
     position: relative;
 }
 .kb-key[data-lp="lock"]::after,
 .kb-key[data-lp="numpad"]::after,
 .kb-key[data-lp="mode-menu"]::after,
-.kb-key[data-lp="voice-hold"]::after,
+.kb-key[data-lp="space-hold"]::after,
 #ctrlLayer .ctrl-mod::after {
     content: '';
     position: absolute;
@@ -1009,6 +1479,19 @@ body.landscape .num-grid { gap: 3px; }
     pointer-events: none;
 }
 #spaceKey.voice .space-mic { color: var(--accent-text); opacity: 1; }
+/* 长按空格非语音动作的自定义键面文案（#59 验收延伸）：与 mic 同一
+ * 槽位同一弱化观感，字号跟键高（≤8 字符）。 */
+#spaceKey .space-face {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    font-size: min(13px, calc(var(--kb-row-h, 44px) * 0.3));
+    color: var(--text);
+    opacity: .55;
+    pointer-events: none;
+    white-space: nowrap;
+}
 
 /* Chinese/English toggle: plain text, no accent
  * colour or highlight - the big current-language glyph with the small target
@@ -1025,7 +1508,7 @@ body.landscape .num-grid { gap: 3px; }
     /* muted is near-invisible on the special key surface in the light theme
      * (users read it as "missing"); text colour at 55% reads on
      * both themes. */
-    color: var(--key-subtext);
+    color: var(--key-ink, var(--key-subtext));
 }
 
 /* The punctuation slot's main glyph sits dead-center; the small
@@ -1099,19 +1582,28 @@ body.landscape .num-grid { gap: 3px; }
     gap: 8px;
     padding: 2px 0 8px;
 }
+/* #33 统一内外视觉：面板头圆钮与候选条工具钮同尺寸同材质
+ * （--pill 底 + --pressed 按下，portrait 32 / landscape 30）。 */
 .panel-head .tool {
     flex: none;
-    width: 30px;
-    height: 30px;
+    width: 32px;
+    height: 32px;
     padding: 0;
     border: 0;
     border-radius: 50%;
-    background: var(--logo-bg);
+    background: var(--pill);
     color: var(--icon);
     display: flex;
     align-items: center;
     justify-content: center;
 }
+.panel-head .tool:active { background: var(--pressed); }
+body.landscape .panel-head .tool { width: 30px; height: 30px; }
+/* #39-4：面板开时工具栏整条隐藏，面板头无接管按钮——gap 仍与
+ * candidateBar 的实际值（body[data-one-hand] 恒命中 5px）保持一致，
+ * 头行与候选条密度统一。display:flex 盖掉 UA [hidden] 的坑一并钉住。 */
+body[data-one-hand] .panel-head { gap: 5px; }
+.panel-head .tool[hidden] { display: none; }
 /* The clipboard/favorites tabs live in one pale capsule (the
  * expanded area's tab container); the ACTIVE tab is the white pill. The
  * inactive tabs are transparent with muted text so the selection reads
@@ -1119,7 +1611,7 @@ body.landscape .num-grid { gap: 3px; }
 .panel-tabs {
     flex: none;
     display: flex;
-    background: rgb(var(--panel-rgb) / var(--key-alpha));
+    background: var(--panel-a);
     border-radius: 16px;
     padding: 2px;
 }
@@ -1137,7 +1629,18 @@ body.landscape .num-grid { gap: 3px; }
     color: var(--text);
     font-weight: 600;
 }
-.panel-action { margin-left: auto; color: var(--text); height: 30px; }
+/* 面板头改版（验收 2026-09-24）：收起箭头撤掉，清空/添加顺排右侧，
+ * 最右是收起键。#33 二轮（2026-09-26）：tabs 两侧 auto 居中在
+ * 清空(2字)/＋添加(3字) 间左右位移且不贴左——改为 tabs 靠左、
+ * action 组 auto margin 推右；面板头几何与 candidateBar 逐像素对齐
+ * （portrait 40px 高 + 2/10 边距；landscape 40px 高 + preedit 带
+ * 上边距），打开/关闭面板顶部零跳变，真机 CJK 行盒差异由定高吸收。 */
+.panel-head { height: 40px; padding: 0; margin: 2px 0 10px; }
+body.landscape .panel-head { margin: var(--preedit-band, 18px) 0 4px; }
+.panel-tabs { margin: 0; }
+.panel-action { color: var(--text); height: 30px; margin-left: auto; }
+/* 「清空」确认态（#39 两击确认） */
+.panel-action.danger { color: var(--danger); font-weight: 600; }
 #panelList {
     flex: 1;
     min-height: 0;
@@ -1145,7 +1648,7 @@ body.landscape .num-grid { gap: 3px; }
     border-radius: 10px;
     /* 候选列表块与键帽同材质（验收反馈）：背景按「按键不透明度」
      * 合成，壁纸上与键帽一致地透，不再是一块死色。 */
-    background: rgb(var(--panel-rgb) / var(--key-alpha));
+    background: var(--panel-a);
     padding: 4px;
 }
 /* 空态不铺列表块（验收反馈）：提示只占一行，列表整个收起，
@@ -1416,10 +1919,9 @@ body.landscape #ctrlLayer .ctrl-close svg { width: 12px; height: 12px; }
     font-size: 12.5px;
     padding: 7px 13px;
 }
-#heightHint #heightSave { background: var(--accent); color: #07180e; font-weight: 600; }
-/* The card owns its slice of layout: the bar drops below it while editing
- * ( - the old overlay covered the first key row). */
-body.height-editing #candidateBar { margin-top: 39px; }
+#heightHint #heightSave { background: var(--accent-strong); color: var(--accent-ink); font-weight: 600; }
+/* （body.height-editing #candidateBar 已删：高度卡是浮层 placeHeightCard，
+ * 无 JS 挂该类——独立评审点名的死 CSS。） */
 
 /* ===== Mode menu ===== */
 /* Opened by LONG-PRESSING the space-adjacent toggle key. 
@@ -1471,6 +1973,8 @@ body.height-editing #candidateBar { margin-top: 39px; }
     font-size: 10.5px;
     color: var(--muted);
 }
+/* 快捷切换配对入口（round-5）：菜单尾部的从属行——弱色 + 上分隔线，
+ * 与可选的模式行区分开（它打开的是配对编辑，不是切换动作）。 */
 
 /* ===== Voice overlay: recording ONLY, high contrast vs background ===== */
 #voiceOverlay {
@@ -1526,7 +2030,7 @@ body.height-editing #candidateBar { margin-top: 39px; }
     padding: 0 12px;
     border: 0;
     border-radius: 18px;
-    background: var(--accent);
+    background: var(--accent-strong);
     color: var(--accent-ink);
     font-size: 14px;
     font-weight: 650;
@@ -1576,7 +2080,7 @@ body.height-editing #candidateBar { margin-top: 39px; }
     white-space: nowrap;
 }
 #voiceSlideHint.arm {
-    background: #07180ecc;
+    background: hsl(var(--bg-hue) calc(55% * var(--bg-sat, 1)) 8% / 0.8);
     color: var(--accent-text);
 }
 #voiceOverlay.hold #voiceActions { display: none; }
@@ -1661,6 +2165,28 @@ body.landscape #voiceSlideHint { margin-top: 48px; padding: 5px 13px; font-size:
     pointer-events: none;
 }
 #keyPopup.open { display: flex; }
+/* 按键气泡（issue #30-1）：视觉沿用 .kp-item 的浮层语言（--panel/--text/
+ * 投影），位置由 JS 定在键帽正上方并做左右钳制；hidden 由 JS 维护，
+ * 长按弹层（#keyPopup，z-30 同层但后开）接管前气泡先撤。 */
+#keyBubble {
+    position: fixed;
+    z-index: 30;
+    pointer-events: none;
+    min-width: 44px;
+    height: 50px;
+    padding: 0 12px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--panel);
+    color: var(--text);
+    box-shadow: 0 3px 12px #000a;
+    font-size: 26px;
+    font-weight: 500;
+    line-height: 1;
+}
+#keyBubble[hidden] { display: none; }
 #keyPopupInner {
     display: flex;
     flex-wrap: wrap;
@@ -1681,7 +2207,7 @@ body.landscape #voiceSlideHint { margin-top: 48px; padding: 5px 13px; font-size:
     color: var(--text);
     box-shadow: 0 3px 12px #000a;
 }
-.kp-item.sel { color: #07180e; background: var(--accent); }
+.kp-item.sel { color: var(--accent-ink); background: var(--accent-strong); }
 
 /* Flick feedback is a viscous direction blob (WAAPI-driven
  * transforms live in showFlick) - never a character preview, the character
@@ -1692,31 +2218,56 @@ body.landscape #voiceSlideHint { margin-top: 48px; padding: 5px 13px; font-size:
     z-index: 31;
     border-radius: 50%;
     /* top-lit droplet: brighter where it "sticks" to the key surface
-     * (fixed rgba - accent #23c890 - color-mix is too new for old WebViews) */
+     * hsla() follows --kb-hue (old WebViews lack color-mix; hsla is fine). */
     background: radial-gradient(circle at 50% 68%,
-        rgba(35, 200, 144, 0.55) 0%,
-        rgba(35, 200, 144, 0.18) 55%,
+        hsl(var(--key-hue) calc(62% * var(--key-sat, 1)) 48% / 0.55) 0%,
+        hsl(var(--key-hue) calc(62% * var(--key-sat, 1)) 48% / 0.18) 55%,
         transparent 78%);
     pointer-events: none;
 }
 #flickBlob.run { display: block; }
 
+/* toast（用户验收重做）：工具栏居中、暗亮通吃的高对比浮层——毛玻璃
+ * 底 + 阴影 + 边框三重区分，字号加大。 */
 #toast {
     display: none;
     position: absolute;
     left: 50%;
-    top: 44px;
+    top: 40px;
     transform: translateX(-50%);
     z-index: 40;
-    max-width: 90%;
-    padding: 7px 11px;
-    border-radius: 7px;
-    background: #3c2530;
-    color: #ffd8dc;
-    font-size: 11px;
+    max-width: 88%;
+    padding: 10px 16px;
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--panel, #2a2a2e) 88%, transparent);
+    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(10px);
+    color: var(--text, #fff);
+    border: 1px solid color-mix(in srgb, var(--text, #fff) 18%, transparent);
+    box-shadow: 0 6px 22px rgba(0, 0, 0, .35);
+    font-size: 14px;
+    line-height: 1.45;
     white-space: nowrap;
 }
 #toast.open { display: block; }
+/* 定制键备注：锚在键上方的气泡（同款高对比浮层） */
+#keyNote {
+    position: fixed;
+    z-index: 60;
+    max-width: 78%;
+    padding: 9px 13px;
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--panel, #2a2a2e) 92%, transparent);
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
+    color: var(--text, #fff);
+    border: 1px solid color-mix(in srgb, var(--text, #fff) 20%, transparent);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, .3);
+    font-size: 13px;
+    line-height: 1.45;
+    white-space: normal;
+    pointer-events: none;
+}
 
 
 /* While the phrase editor strip shows, the key area
@@ -1949,10 +2500,16 @@ body[data-bg-image="on"] #settingsPanel { background: transparent; }
 .sym-custom-key {
     flex: none;
     width: auto;
-    min-width: 44px;
-    max-width: 96px;
-    padding: 0 10px;
-    font-size: 15px;
+    /* em 化（2026-10-04 行缩放）：min-width/padding/字号随行 strip 的
+     * font-size 等比缩（fitCustomRow 写 strip.style.fontSize 百分比）。
+     * 注意 em 相对【本键】font-size：0.94em×16≈15px，则 2.75em≈41px、
+     * 0.625em≈9.4px、6em≈90px（span2/3 同理 ≈86/132px）——比旧 px 值
+     * 整体小 ~6%，等比语义不变。px 定死时字号缩了 min-width 先触顶，
+     * 缩放形同虚设。 */
+    min-width: 2.75em;
+    max-width: 6em;
+    padding: 0 0.625em;
+    font-size: 0.94em;
     white-space: nowrap;
     overflow: hidden;
     /* : keys inherit .kb-key's none gesture policy,
@@ -1960,8 +2517,20 @@ body[data-bg-image="on"] #settingsPanel { background: transparent; }
      * key - only the 5px gaps would scroll. Same lesson as .sym-cat. */
     touch-action: pan-x;
 }
-.sym-custom-bs { flex: none; width: 44px; display: flex; }
-.sym-custom-bs .kb-key { width: 100%; height: 100%; }
+/* #39-12 定制键的可选键面：色板（rgba 叠加，亮/暗键底都可辨）与
+ * 宽键倍数（span 2/3；min/max 随档放宽，内容仍自适应）。 */
+.sym-custom-key.ck-blue   { background: rgba(59, 130, 246, .32);  border-color: rgba(59, 130, 246, .60); }
+.sym-custom-key.ck-green  { background: rgba(34, 197, 94, .30);   border-color: rgba(34, 197, 94, .55); }
+.sym-custom-key.ck-orange { background: rgba(249, 115, 22, .32);  border-color: rgba(249, 115, 22, .55); }
+.sym-custom-key.ck-red    { background: rgba(239, 68, 68, .30);   border-color: rgba(239, 68, 68, .55); }
+.sym-custom-key.ck-purple { background: rgba(168, 85, 247, .30);  border-color: rgba(168, 85, 247, .55); }
+.sym-custom-key[data-span="2"] { min-width: 5.75em; max-width: 10em; }
+.sym-custom-key[data-span="3"] { min-width: 8.75em; max-width: 13.75em; }
+/* 行对齐（2026-10-03 用户需求）：行不满时整组左/中/右停靠。走首键的
+ * auto margin 而非 justify-content——overflow 容器里 justify 会把起点
+ * 方向的键裁进不可滚动区，auto margin 在溢出时归零、自然回落左满排。 */
+.sym-custom-row[data-align="center"] > .sym-custom-key:first-child { margin-left: auto; margin-right: auto; }
+.sym-custom-row[data-align="right"] > .sym-custom-key:first-child { margin-left: auto; }
 /* The shared strip's textarea form (custom-JSON editing). */
 .phrase-area {
     height: auto;
@@ -2151,7 +2720,7 @@ body[data-bg-image="on"] #settingsPanel { background: transparent; }
     font-weight: 600;
 }
 .pc-ghost { background: var(--special); color: var(--text); }
-.pc-main { background: var(--accent); color: #07180e; }
+.pc-main { background: var(--accent-strong); color: var(--accent-ink); }
 .pc-btn:active, .pc-btn.active-touch { filter: brightness(1.12); }
 
 /* , The phrase editor strip sits above the
@@ -2185,8 +2754,8 @@ body[data-bg-image="on"] #settingsPanel { background: transparent; }
     flex: none;
     border: 0;
     border-radius: 8px;
-    background: var(--accent);
-    color: #07180e;
+    background: var(--accent-strong);
+    color: var(--accent-ink);
     font-size: 13px;
     font-weight: 600;
     padding: 9px 12px;
@@ -2282,10 +2851,9 @@ body[data-bg-image="on"] #settingsPanel { background: transparent; }
 }
 .confirm-actions button:active, .confirm-actions button.active-touch { background: var(--pressed); }
 .confirm-actions button.danger { background: var(--danger); color: #fff; }
-/* Quick-switch pair editor (drag order + two ticks). */
-#pairEditor { margin: 6px 4px 2px; }
-#pairEditor .pair-hint { font-size: 11px; color: var(--muted); margin-bottom: 6px; }
-#pairEditor { position: relative; }
+/* Pair-row primitives (tick + name + drag handle). The in-keyboard
+ * quick-switch editor is gone (tile deep-links the settings app since
+ * 3.59.6); these classes are still used by the custom-page rows. */
 .pair-row {
     display: flex;
     align-items: center;
