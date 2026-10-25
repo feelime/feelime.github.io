@@ -126,7 +126,7 @@
     .features-section { padding-block: 96px; }
     .features-heading { display: flex; justify-content: space-between; align-items: flex-end; gap: 40px; margin-bottom: 37px; }
     .features-heading > p { color: var(--muted); font-size: 14px; max-width: 310px; line-height: 1.9; }
-    .feature-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+    .feature-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
     .feature-card { display: flex; flex-direction: column; min-height: 248px; padding: 28px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; transition: border-color .2s, transform .2s; }
     .feature-card:hover { border-color: #4B4E5B; transform: translateY(-3px); }
     .feature-card > .icon { color: var(--green); width: 24px; height: 24px; margin-bottom: 25px; }
@@ -134,6 +134,7 @@
     .feature-card p { font-size: 13px; color: var(--muted); line-height: 1.9; }
     .feature-caption { display: flex; align-items: center; gap: 7px; color: #797C8D; font: 10px/1.7 ui-monospace, monospace; letter-spacing: .04em; margin-top: auto; padding-top: 21px; }
     .feature-caption::before { content: ""; width: 14px; height: 1px; background: #4B4E5B; }
+    .feature-caption a { color: var(--green); }
     .open-source { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-top: 24px; padding: 23px 0 0; color: var(--muted); font-size: 13px; }
     .open-source p { display: flex; align-items: center; gap: 10px; }
     .text-link { display: inline-flex; align-items: center; gap: 8px; color: var(--text); min-height: 44px; white-space: nowrap; }
@@ -268,6 +269,7 @@
       <symbol id="i-settings" viewBox="0 0 24 24"><path d="M4 7h16M4 17h16"></path><rect x="7" y="4" width="4" height="6" rx="1" fill="#14151E"></rect><rect x="14" y="14" width="4" height="6" rx="1" fill="#14151E"></rect></symbol>
       <symbol id="i-reset" viewBox="0 0 24 24"><path d="M3 11a9 9 0 1 1 2 7M3 4v7h7"></path></symbol>
       <symbol id="i-play" viewBox="0 0 24 24"><path d="m7 4 13 8-13 8V4Z"></path></symbol>
+      <symbol id="i-pen" viewBox="0 0 24 24"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"></path></symbol>
       <symbol id="i-signal" viewBox="0 0 24 24"><path d="M4 19v-3m5 3v-7m5 7V8m5 11V4"></path></symbol>
       <symbol id="i-battery" viewBox="0 0 24 24"><rect x="2" y="6" width="18" height="12" rx="2"></rect><path d="M23 10v4M6 10h10v4H6z" fill="currentColor"></path></symbol>
     </defs>
@@ -286,7 +288,7 @@
       <a class="release-link" data-release-href href="https://github.com/feelime/feelime/releases/latest"><b data-release-version>v1.0.21</b><span>从这里，开始自在输入</span><svg class="icon" aria-hidden="true"><use href="#i-arrow"></use></svg></a>
       <div class="hero-brand"><img class="hero-logo" src="assets/feelime-logo.svg" width="104" height="104" alt="Feelime 标志"><h1 id="hero-title">feelime<span class="cursor" aria-hidden="true"></span></h1></div>
       <p class="hero-tagline">自在输入，数据留在本机。</p>
-      <p class="hero-description">拼音、双拼、T9、笔画与语音，离线也能用。<br>一款开源、可定制的 Android 输入法。</p>
+      <p class="hero-description">拼音、双拼、T9、笔画、手写与语音，离线也能用。<br>一款开源、可定制的 Android 输入法。</p>
       <div class="hero-actions">
         <a class="button button-primary" href="https://play.google.com/store/apps/details?id=com.feelime.ime"><svg class="icon" aria-hidden="true"><use href="#i-play"></use></svg>Google Play 安装</a>
         <a class="button button-secondary" href="#download"><svg class="icon" aria-hidden="true"><use href="#i-download"></use></svg>下载 APK</a>
@@ -327,13 +329,15 @@
     </section>
 
     <section class="features-section container" id="features" aria-labelledby="features-title">
-      <div class="features-heading"><div><p class="section-label">日常所需，认真做好</p><h2 class="section-heading" id="features-title">小小键盘，装下你的习惯。</h2></div><p>从顺手的拼音到随口的语音，<br>让输入贴近你，让数据留在身边。</p></div>
+      <div class="features-heading"><div><p class="section-label">日常所需，认真做好</p><h2 class="section-heading" id="features-title">小小键盘，装下你的习惯。</h2></div><p>从拼音、手写到语音，<br>让输入贴近你，让数据留在身边。</p></div>
       <div class="feature-grid">
-        <article class="feature-card"><svg class="icon" aria-hidden="true"><use href="#i-keyboard"></use></svg><h3>拼音，离线照常打</h3><p>基于 librime 中文引擎，全拼、双拼、九宫格 T9、笔画都能打；候选带中文联想，打到一半帮你接下一句。</p><span class="feature-caption">librime · 全拼 / 双拼 / T9 / 笔画</span></article>
+        <article class="feature-card"><svg class="icon" aria-hidden="true"><use href="#i-keyboard"></use></svg><h3>拼音，离线照常打</h3><p>基于 librime 中文引擎，全拼、双拼、九宫格 T9、笔画都能打；候选带中文联想，打到一半帮你接下一句。法语、俄语、日语罗马字同样离线。</p><span class="feature-caption">librime · 全拼 / 双拼 / T9 / 笔画 / 多语言</span></article>
+        <article class="feature-card"><svg class="icon" aria-hidden="true"><use href="#i-pen"></use></svg><h3>写出来，也认得</h3><p>整字手写在设备上实时识别，停笔即出字；上屏即进联想，和键盘无缝接力，生僻字也免拼音。</p><span class="feature-caption">离线手写 · 实时识别</span></article>
         <article class="feature-card"><svg class="icon" aria-hidden="true"><use href="#i-mic"></use></svg><h3>想到什么，就说出来</h3><p>语音在设备上识别，边说边出字，再做整句纠错。下载模型后即可离线使用，录音不上传。</p><span class="feature-caption">sherpa-onnx · 本地识别</span></article>
+        <article class="feature-card"><svg class="icon" aria-hidden="true"><use href="#i-settings"></use></svg><h3>键盘，长成你的样子</h3><p>键帽拖拽换位、长按动作自定义；进阶玩家可用 JSON 深度定制整块键盘，颜文字与符号面板也随你编排。</p><span class="feature-caption">键位定制 · <a href="custom-keyboard.html">JSON 定制指南</a> · 颜文字面板</span></article>
+        <article class="feature-card"><svg class="icon" aria-hidden="true"><use href="#i-theme"></use></svg><h3>按你的审美来</h3><p>深浅主题、背景图、键帽与候选字号、自定义字体，高度、单手模式、气泡与声音振动，横屏也安排好了。</p><span class="feature-caption">主题 / 背景图 / 字体字号 / 单手</span></article>
+        <article class="feature-card"><svg class="icon" aria-hidden="true"><use href="#i-book"></use></svg><h3>词库，由你做主</h3><p>支持导入 rime 词库（.dict.yaml），也能在本机整套换装社区词库；数据可本地备份，也能同步到自己的 WebDAV 网盘。</p><span class="feature-caption">rime 词库 · 导入 / 换装 · WebDAV 备份</span></article>
         <article class="feature-card"><svg class="icon" aria-hidden="true"><use href="#i-clipboard"></use></svg><h3>少打一点，快一点</h3><p>复制过的内容、经常说的话，收在剪贴板与常用语面板；打 date、riqi，当前日期时间直接进候选。</p><span class="feature-caption">剪贴板 / 常用语 / 日期候选</span></article>
-        <article class="feature-card"><svg class="icon" aria-hidden="true"><use href="#i-book"></use></svg><h3>词库，由你做主</h3><p>支持导入 rime 词库（.dict.yaml），也能在本机整套换装社区词库；常用语简码、候选符号随心加。</p><span class="feature-caption">rime 词库 · 导入 / 换装</span></article>
-        <article class="feature-card"><svg class="icon" aria-hidden="true"><use href="#i-theme"></use></svg><h3>按你的手感来</h3><p>深浅主题、键盘高度与字号可调，单手模式、按键声音振动；手势输入与 Ctrl / Fn / Win 粘滞组合都在。</p><span class="feature-caption">主题 / 单手 / 控制键</span></article>
         <article class="feature-card"><svg class="icon" aria-hidden="true"><use href="#i-code"></use></svg><h3>每一行，都看得见</h3><p>应用与键盘源码开放（GPL-3.0），键盘还能独立热更新，不重装应用也能焕新。欢迎带着想法或代码一起来。</p><span class="feature-caption">GPL-3.0 · 开源</span></article>
       </div>
       <div class="open-source"><p><svg class="icon" aria-hidden="true"><use href="#i-code"></use></svg>好用的输入法，也应该让人放心。</p><a class="text-link" href="https://github.com/feelime/feelime">到 GitHub 看看<svg class="icon" aria-hidden="true"><use href="#i-external"></use></svg></a></div>
