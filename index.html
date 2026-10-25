@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#11121A">
   <meta name="color-scheme" content="dark">
   <title>Feelime — 离线优先的 Android 输入法</title>
-  <meta name="description" content="Feelime 是离线优先的开源 Android 输入法：全拼、双拼、T9、笔画与离线语音，词库可自定义，数据不出设备。在线体验真实键盘，下载最新版。">
+  <meta name="description" content="Feelime 是离线优先的开源 Android 输入法：全拼、双拼、T9、笔画与离线语音，词库可自定义，数据不出设备。已上架 Google Play，也可下载 APK。在线体验真实键盘。">
   <meta property="og:type" content="website">
   <meta property="og:locale" content="zh_CN">
   <meta property="og:url" content="https://feelime.github.io/">
@@ -66,7 +66,7 @@
     @keyframes cursor-blink { 0%, 58%, 100% { opacity: 1; } 59%, 99% { opacity: 0; } }
     .hero-tagline { font-size: clamp(24px, 3vw, 34px); font-weight: 650; letter-spacing: -.025em; }
     .hero-description { margin-top: 15px; color: var(--muted); font-size: 17px; line-height: 1.9; }
-    .hero-actions { display: flex; justify-content: center; gap: 14px; margin-top: 30px; }
+    .hero-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 14px; margin-top: 30px; }
     .button { display: inline-flex; align-items: center; justify-content: center; gap: 10px; min-height: 52px; padding: 11px 26px; border: 1px solid var(--line); border-radius: 9px; font-size: 15px; font-weight: 600; transition: background .18s, border-color .18s, transform .18s; }
     .button:hover { border-color: #626371; transform: translateY(-2px); }
     .button-primary { background: var(--green); border-color: var(--green); color: #092015; }
@@ -158,9 +158,6 @@
     .dl-btn.recommended { order: -1; }
     .version-tag { padding: 2px 6px; color: var(--green); background: #09D96713; border: 1px solid #09D96725; border-radius: 4px; font: 11px/1.5 ui-monospace, monospace; }
     .download-card p { color: var(--muted); font-size: 12px; margin-top: 7px; }
-    .download-card.unavailable { border-color: var(--line); background: transparent; color: #9A9AA8; }
-    .download-card.unavailable > .icon { color: #747887; }
-    .coming-soon { margin-left: auto; font-size: 11px; white-space: nowrap; border: 1px solid #41434E; border-radius: 4px; padding: 3px 7px; }
     .site-footer { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding-block: 30px; }
     .footer-brand { display: flex; align-items: center; gap: 14px; color: var(--muted); font-size: 12px; }
     .footer-brand img { width: 28px; height: 28px; }
@@ -245,7 +242,6 @@
       .feature-grid { grid-template-columns: 1fr; }
       .feature-card { min-height: 0; }
       .download-card { padding-inline: 13px; gap: 10px; }
-      .coming-soon { font-size: 10px; padding: 3px 5px; }
     }
     @media (prefers-reduced-motion: reduce) {
       html { scroll-behavior: auto; }
@@ -293,6 +289,7 @@
       <p class="hero-description">拼音、双拼、T9、笔画与语音，离线也能用。<br>一款开源、可定制的 Android 输入法。</p>
       <div class="hero-actions">
         <a class="button button-primary" data-release-href href="https://github.com/feelime/feelime/releases/latest"><svg class="icon" aria-hidden="true"><use href="#i-download"></use></svg>下载 APK</a>
+        <a class="button button-secondary" href="https://play.google.com/store/apps/details?id=com.feelime.ime"><svg class="icon" aria-hidden="true"><use href="#i-play"></use></svg>Google Play</a>
         <a class="button button-secondary" href="#preview">在线体验<svg class="icon" aria-hidden="true"><use href="#i-arrow"></use></svg></a>
       </div>
       <div class="hero-details"><span><svg class="icon" aria-hidden="true"><use href="#i-keyboard"></use></svg>离线拼音</span><span><svg class="icon" aria-hidden="true"><use href="#i-mic"></use></svg>离线语音</span><span><svg class="icon" aria-hidden="true"><use href="#i-shield"></use></svg>开源可审计</span></div>
@@ -344,12 +341,12 @@
 
     <section class="download-section" id="download" aria-labelledby="download-title">
       <div class="download-layout container">
-        <div class="download-copy"><p class="section-label">开始使用</p><h2 class="section-heading" id="download-title">下一句话，<br>用 Feelime 输入。</h2><p>两个安装包任选：精简版体积小，语音识别模型需额外下载；完整版内置模型，装好即用。<br>准备好后，就可以自在地离线输入了。</p></div>
+        <div class="download-copy"><p class="section-label">开始使用</p><h2 class="section-heading" id="download-title">下一句话，<br>用 Feelime 输入。</h2><p>Google Play 安装可自动更新；也支持直接下载 APK——精简版体积小，语音模型按需获取，完整版内置模型装好即用。<br>准备好后，就可以自在地离线输入了。</p></div>
         <div class="download-options">
+          <a class="download-card" href="https://play.google.com/store/apps/details?id=com.feelime.ime" aria-label="在 Google Play 安装 Feelime（自动更新）"><svg class="icon icon-solid" aria-hidden="true"><use href="#i-play"></use></svg><div><h3>Google Play<span class="version-tag">自动更新</span></h3><p>商店安装，版本与修复自动送达</p></div><svg class="icon" aria-hidden="true"><use href="#i-arrow"></use></svg></a>
           <a class="download-card" data-release-href href="https://github.com/feelime/feelime/releases/latest" aria-label="前往 GitHub Release 查看 Feelime 全部版本与更新日志"><svg class="icon icon-solid" aria-hidden="true"><use href="#i-github"></use></svg><div><h3>GitHub Release<span class="version-tag" data-release-version>v1.0.21</span></h3><p>最新版本与更新日志都在这里</p></div><svg class="icon" aria-hidden="true"><use href="#i-arrow"></use></svg></a>
           <div class="download-card"><svg class="icon" aria-hidden="true"><use href="#i-download"></use></svg><div><h3>精简版安装包 · <span data-release-size="thin">69MB</span></h3><p>语音识别模型需额外下载，在应用内按需获取</p></div><div class="dl-actions"><a class="dl-btn" data-release-asset="thin" href="https://github.com/feelime/feelime/releases/latest" aria-label="从 GitHub 下载精简版安装包">GitHub</a><a class="dl-btn ghost" data-release-mirror="thin" href="https://github.com/feelime/feelime/releases/latest" aria-label="从 ghproxy 镜像下载精简版安装包">镜像加速</a></div></div>
           <div class="download-card"><svg class="icon" aria-hidden="true"><use href="#i-download"></use></svg><div><h3>完整版安装包 · <span data-release-size="full">336MB</span></h3><p>内置离线语音识别模型，装好即用</p></div><div class="dl-actions"><a class="dl-btn" data-release-asset="full" href="https://github.com/feelime/feelime/releases/latest" aria-label="从 GitHub 下载完整版安装包">GitHub</a><a class="dl-btn ghost" data-release-mirror="full" href="https://github.com/feelime/feelime/releases/latest" aria-label="从 ghproxy 镜像下载完整版安装包">镜像加速</a></div></div>
-          <div class="download-card unavailable" aria-disabled="true"><svg class="icon" aria-hidden="true"><use href="#i-play"></use></svg><div><h3>Google Play</h3><p>稍后也能在这里找到我们</p></div><span class="coming-soon">即将上线</span></div>
         </div>
       </div>
     </section>
