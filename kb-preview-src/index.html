@@ -199,6 +199,13 @@
              让位，这一行左侧的模式标识与右侧 ×（composeClear）一起构成
              候选行；平时隐藏，不占布局。 -->
         <span id="inkTag" class="ink-tag" hidden data-i18n="手写">手写</span>
+ <!-- #H 候选条形态快捷切换键（#87 顺带优化）：键区隐藏时的模式可见性
+             ——软硬切换后用户能看见自己身在哪个键盘。modeToggle 的紧凑
+             形态：cn-main=当前模式简称、cn-sub=快捷对目标简称，点按翻对、
+             长按模式菜单；完整键盘形态仍用 modeToggle。 -->
+        <button id="hwModeTag" class="hw-toggle" hidden aria-label="切换键盘" data-i18n-aria-label="切换键盘">
+            <span class="cn-main"></span><span class="cn-sub"></span>
+        </button>
         <div id="candidates"></div>
  <!-- Engine lifecycle notice (mode-fallback §2.3): overlays the
              candidate strip while the engine warms up or a degrade fallback
@@ -313,7 +320,8 @@
         <div id="symCatBar">
             <button class="kb-key kb-special" data-action="letters">ABC</button>
             <div id="symCats"></div>
-            <button class="kb-key kb-special" id="symEnterKey" aria-label="换行" data-i18n-aria-label="换行" data-i18n="换行">换行</button>
+            <!-- ⌫ 由 setup 注入（specialKey repeat，占换行键原位）：
+                 符号层不设换行——换行走 ABC 回主键盘（2026-10-28 用户定案）。 -->
         </div>
     </section>
     <!-- 九宫格数字键盘（长按 123 打开），全部由 renderNumpad 填充 -->
@@ -332,6 +340,9 @@
                 <button class="panel-tab active" data-panel-tab="clipboard" data-i18n="剪贴板">剪贴板</button>
                 <button class="panel-tab" data-panel-tab="favorites" data-i18n="常用语">常用语</button>
             </div>
+            <!-- #67 定稿：颜文字不走 tab 界面——面板头换成横向滑动的
+                 分类条（右侧固定 × 收起），列表区整幅给网格。 -->
+            <div id="kaomojiTabs" class="kaomoji-tabs" hidden></div>
             <button id="panelClear" class="panel-action" aria-label="清空剪贴板" data-i18n-aria-label="清空剪贴板" data-i18n="清空">清空</button>
             <button id="panelManage" class="panel-action" aria-label="添加常用语" data-i18n-aria-label="添加常用语" hidden data-i18n="＋添加">＋添加</button>
             <!-- #39-4 定稿：面板头右侧唯一的关闭钮，× 图标回主键盘

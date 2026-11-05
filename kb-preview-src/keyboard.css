@@ -144,12 +144,22 @@ html.theme-dark {
 }
 
 * { box-sizing: border-box; }
+/* button/输入类控件不吃 body 的 font-family 继承（UA 样式默认另起）；
+ * 键帽都是 button，用户字体（issue #70）必须显式继承才生效。 */
+button, input, select, textarea { font-family: inherit; }
 /* The IME window is TALLER than the keyboard (the native float
  * band above it); html/body stay transparent so the app shows through the
  * band - only #softKeyboard paints the keyboard background. */
 html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: transparent; }
 body {
-    font-family: system-ui, "Noto Sans CJK SC", sans-serif;
+    /* 用户字体（issue #70）：导入后 JS 把 --kb-font 置为 "FeelimeUser"，
+     * @font-face 由 /keyboard/fonts/<digest>/face.css 提供；缺省/加载失败
+     * 逐字回落系统栈。button 等表单元素不吃 body 继承，得显式带回来。 */
+    font-family: var(--kb-font, system-ui), "Noto Sans CJK SC", sans-serif;
+    /* 键帽字号（issue #70）的缩放基准：--keycap-font-scale 只乘在基准上，
+     * 上限受角标让位约束（见 .kb-main/.t9-group 的 min/max 钳制）。 */
+    --kb-main-base: min(22px, calc(var(--kb-row-h, 44px) * 0.5));
+    --kb-t9-base: min(20px, calc(var(--kb-row-h, 44px) * 0.46));
     user-select: none;
     -webkit-user-select: none;
     /* 长按浮层不收起（#7）：系统长按 ~500ms 触发 WebView 文本选择/
@@ -208,6 +218,53 @@ button { font: inherit; }
 /* #39 挖孔安全区：padding 落在 #softKeyboard 上（背景默认铺满 padding 区，
  * 同单手模式语义）——键区给挖孔侧让位，背景仍铺到屏幕边。开关关闭时
  * JS 侧把 --safe-side-* 清 0，键也铺满。 */
+/* #H 硬键盘候选条形态（design hardware-keyboard.md §5）：键区整层
+ * 隐藏，只保留 candidateBar（预编辑 band 由 native 的候选条高度预算
+ * 承载）。native 侧 contentHeightPx 已收缩窗口高度——CSS 只做视觉
+ * 收口；applyHeight 同步重排。 */
+/* 只藏字母键区（qwerty/.kb-rows）——symbolLayer/ninePad 也是工具栏
+ * 可达视图（codex 复审 P1-9：数字/符号/Emoji 按钮放上工具栏后，无条件
+ * 藏死=点开落空白；它们 [hidden] 自管，hwPanelHeightState 报 full 配套
+ * 撑高）。ctrlLayer/voiceOverlay 同理不进隐藏列（控制层是候选条行视图、
+ * 语音遮罩有 .open 开关）；也不写 body.hwkb #candidateBar{display:flex}
+ * ——那条会盖掉 [hidden] 的 UA 隐藏（engineStatus 顶替、控制层借条
+ * 都靠 hidden 让位）。 */
+body.hwkb #qwertyLayer,
+body.hwkb .kb-rows { display: none; }
+/* 候选条在 hwkb 态独占键区：margin 归零（原生高度预算已按 40px bar
+ * 计算，2/10px margin 会让 bar 沉底）。 */
+body.hwkb #candidateBar { margin: 0; }
+/* #H 候选条形态快捷切换键（#87 顺带优化）：modeToggle 的紧凑形态，
+ * 只在 hwkb 形态显示。cn-main=当前模式简称、cn-sub=快捷对目标简称
+ * （右下角小字，#modeToggle 同款排版）；点按翻对、长按模式菜单。 */
+#hwModeTag {
+    position: relative;
+    background: none;
+    border: none;
+    color: inherit;
+    font: inherit;
+    padding: 2px 8px 4px;
+    min-width: 34px;
+    flex: none;
+    display: none;
+    cursor: pointer;
+}
+#hwModeTag[hidden] { display: none; }
+body.hwkb #hwModeTag { display: inline-block; }
+body.hwkb #hwModeTag[hidden] { display: none; }
+/* 只在 hwkb 候选条形态显示，与软键盘行高无关；横屏行高钳制可到 1px，
+   绑 --kb-row-h 会把模式字缩没了（codex review MAJOR） */
+#hwModeTag .cn-main { font-size: 16px; font-weight: 500; }
+#hwModeTag .cn-sub {
+    position: absolute;
+    right: 3px;
+    bottom: 2px;
+    font-size: 9px;
+    font-weight: 400;
+    color: var(--key-ink, var(--key-subtext));
+}
+body.hwkb #softKeyboard { padding-bottom: calc(2px + var(--safe-bottom, 0px)); }
+
 body.landscape #softKeyboard {
     padding: 4px calc(4px + var(--safe-side-r, 0px))
         calc(4px + var(--safe-bottom, 0px) + var(--kb-bottom-pad, 0px))
@@ -722,7 +779,8 @@ body.landscape { --kb-gap: 4px; }
     background: var(--key);
     /* #61 review P1：键面亮度偏移过大时白字对比崩，JS 设 --key-ink 翻深墨；缺省回落 --text。 */
     color: var(--key-ink, var(--text));
-    font-size: 13px;
+    /* 功能键文字（issue #70）：跟随键帽字号缩放；无角标碰撞，不设上限。 */
+    font-size: calc(13px * var(--keycap-font-scale, 1));
     font-weight: 550;
     display: flex;
     align-items: center;
@@ -733,7 +791,10 @@ body.landscape { --kb-gap: 4px; }
 .kb-key.kb-letter { flex-direction: column; gap: 2px; }
 /* Glyphs scale with the row height (dragging the keyboard
  * shorter shrinks the font too - nothing overflows the key face). */
-.kb-main { font-size: min(22px, calc(var(--kb-row-h, 44px) * 0.5)); line-height: 1; font-weight: 400; }
+/* 键帽字号（issue #70）：基准 × --keycap-font-scale，再被「行高-16px」
+ * 钳制（顶部角标区 12px + 底部留白 4px，#39-3 让位布局不能被大字号
+ * 侵占）；max(base, …) 保证过矮行高下缩放退化为不缩放而非缩到基准以下。 */
+.kb-main { font-size: min(calc(var(--kb-main-base) * var(--keycap-font-scale, 1)), max(var(--kb-main-base), calc(var(--kb-row-h, 44px) - 16px))); line-height: 1; font-weight: 400; }
 .kb-alt { color: var(--muted); font-size: 9px; line-height: 1; font-weight: 400; }
 /* 上下滑互换（issue #29-2）：小字提示跟着翻到主字下方（提示的是下滑值）；
  * 标点槽是墨形绝对定位，主字（inset 42%/12%）与 alt 要一起上下镜像，
@@ -757,7 +818,8 @@ body.flick-swap .kb-key.zh-punct .kb-alt { top: auto; bottom: 12%; }
  * the key's normal centring; F10 is the widest label at the narrowest key. */
 .kb-key.fn-label .kb-alt { display: none; }
 .kb-key.fn-label .kb-main {
-    font-size: min(16px, calc(var(--kb-row-h, 44px) * 0.38));
+    /* 功能键文字（issue #70）：跟随键帽字号缩放（无角标，钳制同口径）。 */
+    font-size: min(calc(16px * var(--keycap-font-scale, 1)), max(16px, calc(var(--kb-row-h, 44px) - 16px)));
     white-space: nowrap;
 }
 /* alt 隐藏后回中：flick-swap 起字母键是 alt 上/main 下的底锚
@@ -769,7 +831,7 @@ body.flick-swap .kb-key.zh-punct .kb-alt { top: auto; bottom: 12%; }
     padding-top: 0;
     padding-bottom: 0;
 }
-.kb-special { background: var(--special); font-size: min(15px, calc(var(--kb-row-h, 44px) * 0.34)); font-weight: 500; }
+.kb-special { background: var(--special); font-size: min(calc(15px * var(--keycap-font-scale, 1)), max(15px, calc(var(--kb-row-h, 44px) - 16px))); font-weight: 500; }
 .kb-mod.active, .kb-mod.locked { color: var(--accent-text); background: var(--mod-active-bg, #103a24); box-shadow: inset 0 0 0 1px var(--accent); }
 .kb-wide-1_4 { flex: 1.4; }
 .kb-wide-2_1 { flex: 2.1; }
@@ -783,7 +845,9 @@ body.flick-swap .kb-key.zh-punct .kb-alt { top: auto; bottom: 12%; }
  * the four symbol rows must stay inside the same 272px budget. */
 #symCatBar { display: flex; gap: 5px; margin-top: 5px; }
 #symCatBar [data-action="letters"] { flex: 1.35; font-size: 13px; }
-#symEnterKey { flex: 1.35; font-size: 13px; }
+/* ⌫ 顶替换行键位（setup 注入）：与 ABC 同权重，长按连删（bar 在
+ * 滚动容器外，bindTouch 合法——numpad back 同判定）。 */
+#symCatBar [data-role="backspace"] { flex: 1.35; }
 #symCats {
     flex: 4.8;
     display: flex;
@@ -861,7 +925,44 @@ body.flick-swap .kb-key.zh-punct .kb-alt { top: auto; bottom: 12%; }
 .sep { font-size: 14px; font-weight: 500; }
 .kb-layer[hidden] { display: none; }
 .kb-layer { flex: 1; min-height: 0; display: flex; flex-direction: column; justify-content: space-between; }
-#symGrid { flex: 1; display: flex; flex-direction: column; justify-content: space-between; }
+/* #symGrid 是竖向滚动容器（分类行数不设限，货币/假名/制表等多行
+ * 分类上下滑动）。justify-content 不能留在 scroller 本体——溢出时
+ * 负剩余空间把起始方向的内容裁进不可滚区（.sym-custom-row 同教训），
+ * 分布职责摘到内层 .sym-grid-inner。 */
+#symGrid {
+    flex: 1;
+    min-height: 0; /* 无此则撑破层高，被 #softKeyboard overflow:hidden 裁掉 */
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    touch-action: pan-y;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+}
+#symGrid::-webkit-scrollbar { display: none; }
+/* 滚动容器的键盘焦点圈（.ink-scroll 真机实录同因）。 */
+#symGrid:focus { outline: none; }
+/* ≤3 行时 wrapper=视口高，space-between 分布与旧版逐像素一致；
+ * >3 行时 wrapper 高=内容高，space-between 无负空间、起点永不裁。
+ * renderSymbols 每次重建 inner，scrollTop 随内容清空归零=进分类回顶
+ * （搜狗同语义，有意为之）。 */
+.sym-grid-inner {
+    min-height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+}
+/* 压过 .kb-key 的 touch-action:none——否则从键上起手的竖向拖动被
+ * 杀。作用域限定 inner：定制分支的 .sym-custom 直挂 #symGrid，其
+ * pan-x 横滚不受影响。 */
+.sym-grid-inner .kb-key { touch-action: pan-y; }
+/* 可滚才挂（JS 量高后 toggle）：底边 8px 渐隐提示还有更多行；
+ * 顶部不需——每次进分类都回顶。 */
+#symGrid.sym-scrollable {
+    -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 8px), transparent);
+    mask-image: linear-gradient(to bottom, #000 calc(100% - 8px), transparent);
+}
 #symGrid .kb-row:last-child { margin-bottom: 0; }
 
 /* ===== 九宫格数字键盘（长按 123，design §2.6）===== */
@@ -1125,7 +1226,7 @@ body.landscape .edit-grid { gap: 4px 5px; }
     color: var(--key-ink, var(--key-subtext));
 }
 /* 字母组主字形不加重——kb-key 的 550 在大号字母组上显得过粗（用户反馈） */
-.t9-group { font-size: min(20px, calc(var(--kb-row-h, 44px) * 0.46)); font-weight: 400; }
+.t9-group { font-size: min(calc(var(--kb-t9-base) * var(--keycap-font-scale, 1)), max(var(--kb-t9-base), calc(var(--kb-row-h, 44px) - 16px))); font-weight: 400; }
 /* 长按符号角标：左上角小字（issue #9；右上角留给数字角标）。 */
 .t9-hint {
     position: absolute;
@@ -1615,6 +1716,11 @@ body[data-one-hand] .panel-head { gap: 5px; }
     border-radius: 16px;
     padding: 2px;
 }
+/* hidden 属性必须压过上面的显式 display：UA 样式 [hidden]{display:none}
+ * 会被类选择器盖掉——#67 首版颜文字态 tabs 行（display:flex）设置了
+ * hidden 属性却视觉残留「剪贴板|常用语」，DOM 断言读属性全绿、真机
+ * 全露馅。head 内所有子元素统一收口。 */
+.panel-head [hidden] { display: none; }
 .panel-tab, .panel-action {
     height: 26px;
     padding: 0 14px;
@@ -1655,6 +1761,36 @@ body.landscape .panel-head { margin: var(--preedit-band, 18px) 0 4px; }
  * 剩余空间透出键盘背景。 */
 #panelLayer[data-empty] #panelList { display: none; }
 #panelLayer[data-empty] #panelEmpty { flex: none; padding: 14px 0 18px; }
+/* #67 颜文字定稿形态：面板头 tabs 让位给横向滑动分类条（.kaomoji-tabs
+ *  就是面板头里那行 chips，右侧 × 为 panelClose 固定件），列表区整幅
+ *  给网格纵向滚动。与剪贴板/常用语 tab 界面解耦。 */
+.kaomoji-tabs {
+    display: flex; gap: 6px; overflow-x: auto; flex: 1; min-width: 0;
+    padding: 0; margin: 0; border: none; scrollbar-width: none;
+}
+.kaomoji-tabs::-webkit-scrollbar { display: none; }
+.kaomoji-chip {
+    flex: none; border: 1px solid var(--kb-border, rgba(128,128,128,.35));
+    background: transparent; color: inherit; border-radius: 999px;
+    padding: 3px 12px; font-size: 12px; cursor: pointer;
+}
+.kaomoji-chip.active { background: var(--kb-accent, #147345); color: #fff; border-color: transparent; }
+#panelLayer[data-kaomoji] #panelList {
+    display: flex; flex: 1; min-height: 0;
+}
+.kaomoji-grid {
+    display: grid; grid-template-columns: repeat(4, 1fr);
+    gap: 4px; padding: 6px 10px 12px; overflow-y: auto;
+    align-content: start; flex: 1;
+}
+.kaomoji-cell {
+    border: none; background: rgba(128,128,128,.10); color: inherit;
+    border-radius: 8px; min-height: 40px; padding: 6px 4px;
+    font-size: 13px; line-height: 1.25; word-break: break-all;
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+}
+.kaomoji-cell:active { background: rgba(128,128,128,.25); }
+
 .panel-item {
     display: flex;
     align-items: center;

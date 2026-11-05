@@ -717,6 +717,27 @@ function makeBridge() {
         },
         pageNext(rev) { log('pageNext', 'rev=' + rev); },
         pagePrevious(rev) { log('pagePrevious', 'rev=' + rev); },
+        // 手写识别（与主仓库 tools/keyboard-preview.html 同款桩）：延时回
+        // 固定候选，演示书写→候选条→点选上屏全链路（真机由 ochwpro 回推）。
+        recognizeInk(reqId, payload, token) {
+            let strokes = 0;
+            try { strokes = (JSON.parse(payload).strokes || []).length; } catch (_) {}
+            log('recognizeInk', `req=${reqId} strokes=${strokes} <span class="dim">→ 模拟识别</span>`);
+            const win = frame.contentWindow;
+            setTimeout(() => {
+                if (!win || !win.Feelime) return;
+                win.Feelime.onInkCandidates({
+                    reqId,
+                    candidates: [
+                        { text: '感', score: 0.62 }, { text: '憾', score: 0.14 },
+                        { text: '城', score: 0.09 }, { text: '成', score: 0.06 },
+                        { text: '诚', score: 0.04 }, { text: '盛', score: 0.03 },
+                        { text: '晟', score: 0.012 }, { text: '咸', score: 0.008 },
+                    ],
+                    error: null,
+                });
+            }, 300);
+        },
         selectMode(mode) {
             log('selectMode', esc(mode) + ' <span class="dim">→ 重推 hello（真机原生行为）</span>');
             keyboardMode = mode;
@@ -889,7 +910,7 @@ function pushHello() {
         pageGenerationToken: 'tok-1',
         mode: keyboardMode,
         engineDataReady: { pinyin: true, 'double-pinyin': true, japanese: true,
-            french: true, russian: true, t9: true, stroke: true },
+            french: true, russian: true, t9: true, stroke: true, handwriting: true },
         // 键盘侧偏好（真机由原生 hello 下发；预览由 setQuickPref 模拟落盘）。
         uiLanguage: previewPrefs.uiLanguage,
         associationOn: previewPrefs.associationOn,

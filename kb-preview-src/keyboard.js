@@ -7,6 +7,16 @@
 (() => {
     'use strict';
 
+    // Chrome 86 才有 replaceChildren；Android 11 出厂 WebView 是 83，setup
+    // 首次 renderMode 就 TypeError，整个键盘 DOM 建不出来（#88 白屏根因）。
+    // guard 版 polyfill 对新 WebView 零影响。
+    if (typeof Element !== 'undefined' && !Element.prototype.replaceChildren) {
+        Element.prototype.replaceChildren = function (...nodes) {
+            this.textContent = '';
+            for (const n of nodes) this.append(n);
+        };
+    }
+
     // 首帧几何（native 经 URL query 注入的物理 px）：在 hello 之前先把
     // --band/--safe-bottom 落到根元素。CSS 的 fallback 是 0，不设的话
     // 首帧 #softKeyboard 画满整个 IME 窗口（含 200dp 弹层带），hello 到
@@ -59,6 +69,7 @@
         "货币": "Currency",
         "数学": "Math",
         "特殊": "Special",
+        "制表": "Box",
         "序号": "Numbers",
         "拼音": "Pinyin",
         "平假名": "Hiragana",
@@ -75,6 +86,17 @@
         "笑脸": "Smileys",
         "手势": "Gestures",
         "动物": "Animals",
+        // #67 颜文字面板（分类名；颜文字本体不译）
+        "颜文字": "Kaomoji",
+        "开心": "Happy",
+        "卖萌": "Cute",
+        "难过": "Sad",
+        "生气": "Angry",
+        "惊讶": "Surprised",
+        "无奈": "Whatever",
+        "爱心": "Love",
+        "加油": "Cheer",
+        "动作": "Actions",
         "食物": "Food",
         "活动": "Activity",
         "物品": "Objects",
@@ -276,8 +298,7 @@
         "键盘设置": "Quick settings",
         // 手写键面（issue #28）。空书写区提示三行（round-5）。
         "在此手写": "Write here",
-        "模型能力有限": "Model has limits",
-        "避免连笔以提高识别率": "Avoid cursive strokes for better results",
+        "如未识别，请减少连笔": "If not recognized, try less cursive",
         "已清空笔迹": "Ink cleared",
         "手写模型未就绪": "Handwriting model not ready",
         "手写识别失败": "Handwriting recognition failed",
@@ -300,7 +321,7 @@
         });
     }
 
-    const KEYBOARD_VERSION = '3.73.44';
+    const KEYBOARD_VERSION = '3.73.79';
     // #39-12 收口：整屏级互斥视图注册表（单一事实源）。统计浮层、
     // 定制面板两轮同款叠层事故的根因是互关调用散装在各个 toggle 里，
     // 新视图忘了关所有人就叠加。现在：新视图在此登记一次（怎么判开、
@@ -325,7 +346,7 @@
      *  的表情子视图（工具栏 Emoji 按钮同款入口）、custom=符号面板定制
      *  tab（工具栏定制按钮的直达逻辑，空表引导去设置）。设置页的
      *  CK_PANEL_TARGETS 与此表同源，两侧同步改。 */
-    const PANEL_STEPS = new Set(['clipboard', 'favorites', 'edit', 'control', 'emoji', 'custom']);
+    const PANEL_STEPS = new Set(['clipboard', 'favorites', 'kaomoji', 'edit', 'control', 'emoji', 'custom']);
 
     /** 纯符号词条判定（issue #17）：每个字符既不是字母（含汉字）也不是
      *  数字——↑✓★🐱♂ 这类 custom_phrase 符号词。用于渲染层把它们重排
@@ -333,6 +354,43 @@
     function isSymbolicText(text) {
         if (!text) return false;
         return [...String(text)].every(ch => !/\p{L}/u.test(ch) && !/\p{N}/u.test(ch));
+    }
+
+    /** 符号词使用计数（issue #81）：符号词在引擎侧是 custom_phrase 附加
+     *  候选（不入 userdb，引擎不学习），渲染层此前把符号词无条件钉在
+     *  候选第 3 格——位置与使用频率完全脱钩。这里在键盘侧记每词被选
+     *  次数（localStorage 持久；换机/重装归零，与 userdb 词频同语义的
+     *  轻量版），injectFavoriteCandidates 按计数分层排序。 */
+    const SYMBOL_USE_KEY = 'symUse.v1';
+    /** 计数达到该值视为「养成」：符号词升到池头参与空格直选。 */
+    const SYMBOL_PROMOTE_AT = 5;
+
+    function readSymbolUseCounts() {
+        try {
+            const raw = localStorage.getItem(SYMBOL_USE_KEY);
+            const parsed = raw ? JSON.parse(raw) : null;
+            // 脏数据防御（review P2）：数组/标量整体作废；逐项只认非负
+            // 安全整数，坏值按 0 处理（丢项会让符号从候选池消失、字符串
+            // 会拼成 "41" 这类失真计数）。
+            if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+            const clean = {};
+            Object.keys(parsed).forEach(key => {
+                const value = parsed[key];
+                if (Number.isInteger(value) && value >= 0
+                    && value <= Number.MAX_SAFE_INTEGER) {
+                    clean[key] = value;
+                }
+            });
+            return clean;
+        } catch (_) {
+            return {};
+        }
+    }
+
+    function writeSymbolUseCounts(counts) {
+        try {
+            localStorage.setItem(SYMBOL_USE_KEY, JSON.stringify(counts));
+        } catch (_) { /* 私有模式/配额：计数本就是尽力而为 */ }
     }
 
     /** 动态日期时间候选（issue #22 分层结论，rime date.lua 等价体验）：
@@ -395,6 +453,71 @@
  *  logo（左）与收起（右）固定不可编辑；组合态工具（清除/展开）不参与
  *  编辑。完整设置齿轮（#33-1）不再随快开面板自动插栏（会把用户摆好的
  *  图标顶右移一格），改为目录里的一颗可选工具，用户自选常驻。 */
+/** 颜文字面板素材（#67）：主流输入法通用度高的经典颜文字，分十类。
+ *  分类名经 t() 渲染（UI_EN 译分类名），颜文字本体原样上屏。 */
+const KAOMOJI_TABS = [
+    { id: 'happy', name: '开心', items: [
+        '(｡･ω･｡)ﾉ♡', '(๑•̀ㅂ•́)و✧', '(≧▽≦)', 'ヾ(≧∇≦*)ゝ', '(＾▽＾)',
+        '\(^▽^)/', '(≧∀≦)', '(^o^)／', '(☆▽☆)', '(✧∀✧)',
+        '(✿◡‿◡)', '｡ﾟ+..｡ﾟ+', '(^▽^)/~', '( ˘ ³˘)♥', '(*≧▽≦)',
+        '(∩˃o˂∩)♡', '(*^▽^*)', '(≡^∇^≡)', 'o((>ω< ))o', '(✿▽✿)',
+    ]},
+    { id: 'cute', name: '卖萌', items: [
+        '(๑´ㅂ`๑)', '(｡>﹏<｡)', '(๑•́ ₃ •̀๑)', '(ฅ´ω`ฅ)', '(◍•ᴗ•◍)♡',
+        '(っ˘ω˘ς)', '(๑˙ー˙๑)', '(｡•̀ᴗ-)✧', '(´,,•ω•,,)♡', '(灬ºωº灬)',
+        '♡(ŐωŐ人)', '(=^･ω･^=)', 'つ♡', '(๑＞◡＜๑)', '(☆ω☆)',
+        '(⊃•̀ω•́)⊃', '(=①ω①=)', '(๑ᵔ⌔ᵔ๑)', '(´,,•ω•,,)', '(ᗒᗨᗕ)',
+    ]},
+    { id: 'sad', name: '难过', items: [
+        '(╥﹏╥)', '(；′⌒`)', 'ヽ(´□`。)ﾉ', '(T_T)', '(｡•́︿•̀｡)',
+        '(个_个)', '(´;ω;`)', '(っ- ‸ - ς)', '(﹏˘﹏˘)', '。・ﾟ・(＞д＜)・ﾟ・。',
+        '(┳_┳…)', '(;д;)', '(TдT)', '(;′︿`)', '(☍﹏⁰)',
+        '･ﾟ･(⁄⁄•⁄ω⁄•⁄⁄)･ﾟ･', '(TT)', '。゜(゜´ω`゜)゜。', '(个ˊ͈ᗜˋ͈个)', '(;﹏;)',
+    ]},
+    { id: 'angry', name: '生气', items: [
+        '(╬ ﾟдﾟ)', '(｀Δ´)！', '(╯°□°）╯︵ ┻━┻', '(ﾉ｀⊿´)ﾉ ┻━┻', '(▼へ▼メ)',
+        '(－‸ლ)', 'ヽ(ｏ`皿′ｏ)ﾉ', '(╬￣皿￣)＝○', '┌∩┐(◣_◢)┌∩┐', '(♯▼皿▼)',
+        '(눈_눈)', '(｀へ´)', '(＃`д´)ノ', '٩(╬ʘ益ʘ╬)۶', '(¬_¬',
+        '凸(⊙▂⊙✖ )', '(>\_<)', '(҂ `з´ )', '(｀м´)', '( ゜д゜)',
+    ]},
+    { id: 'surprise', name: '惊讶', items: [
+        '(⊙_⊙)', 'Σ(ﾟДﾟ)', 'w(ﾟДﾟ)w', 'Σ(°△°|||)', '(＃°Д°)', '(◎_◎;)',
+        '(・o・)', '( ﾟдﾟ)', 'Σ(゜Д゜)', '(O_O;)', '(⊙﹏⊙)',
+        'Σ(๑°д°ノ)ノ', '(ㆆ_ㆆ)', 'w(･д･)w', '(・□・；)', '(⊙⊙)',
+        '( ﾟдﾟ)!', '( ﾟ∀ﾟ)', 'Σ(ﾟ∀ﾟ)', '(°ロ°) !', '(・_・;',
+    ]},
+    { id: 'meh', name: '无奈', items: [
+        '╮(╯▽╰)╭', '╮(╯_╰)╭', '(´-ω-`)', '(￣^￣)', '(¬_¬)', '(ーー;)',
+        '(´∀`)', '(･･;)ﾊｯ', '┐(´д`)┌', '┐(´～`)┌', '(￣_￣|||)',
+        '(=_=)"', '¦3▓▓', '(￣o￣) . z Z', '(´-﹏-`)', '(ー_ー)!!',
+        '┐(･_･)┌', '(；一_一)', '(￣ヘ￣)', '(＝。＝)',
+    ]},
+    { id: 'love', name: '爱心', items: [
+        '♡', "(●'◡'●)ﾉ♥", '♪(´▽｀)', '❤(। ᐛ 。)❤', '(◍•ᴗ•◍)✧',
+        '♡✧( ु•ᴗ•ू )', "(っ´ω`c)♡", '(˘︶˘)♡', '❥(ゝ◡・)', '(๑♡⌓♡๑)',
+        '♥(ˆ⌣ˆԅ)', '♪(^∇^*)', '(⊃｡•́‿•̀｡)⊃♡', '(♡°▽°♡)', '(づ￣ ³￣)づ',
+        "(っ´∀`)っ", "(っ•̀ω•́)っ♡", '❤(。•́ᴗ•̀。)♡', '✧*。٩(ˊωˋ*)و✧*。', '⊂(´・ω・｀⊂)',
+    ]},
+    { id: 'cheer', name: '加油', items: [
+        '(ง •̀_•́)ง', '(๑•̀ㅂ•́)و✧', '(っ•̀ω•́)っ✧⁾⁾', '✧(≖ ◡ ≖✿)', "(ง'̀-'́)ง",
+        'ᕦᕤ', '(•̀ᴗ•́)و ̑̑', 'ヾ(◍°∇°◍)ﾉﾞ', '(ง •̅_•̅)ง', 'ง(̀-̀ง)',
+        '(๑•̀ㅂ•́)✧', '٩(๑•̀ω•́๑)۶', 'ᕦ(ò_óˇ)ᕤ', '(ง •_•)ง', 'ᕙ(•̀‸•́‶)ᕗ',
+        'ヾ(＾∇＾)', 'o(>ω<)o', 'ᕕ( ᐛ )ᕗ', 'd(^^*)', '(•̀ᴗ•́)و',
+    ]},
+    { id: 'action', name: '动作', items: [
+        'orz', 'OTL', 'Orz', '_(:з」∠)_', '(=_=)', '(zzz)', '(˘ω˘)',
+        'm(_ _)m', '(TεT)', 'Σ(っ°Д°;)っ', '(¦3[▓▓]', '_(┐「ε:)_',
+        'ヾ(´︶`♡)ﾉ', 'щ(ʘ╻ʘ)щ', '( ˘•ω•˘ )', '( ˘ ³˘)o°', '⊂(・﹏・⊂)',
+        '(/ω＼)', '⊂(´・ω・｀⊂)', '(→_→)', '(←_←)',
+    ]},
+    { id: 'animal', name: '动物', items: [
+        '(=^･ω･^=)', '(ฅ^ω^ฅ)', 'ヾ(=･ω･=)o', '(⁎˃ᆺ˂⁎)', '(^・ω・^ )',
+        'ฅ(＾・ω・＾ฅ)', '∪・ω・∪', '∪ºωº∪', 'ʕ•ᴥ•ʔ', 'ʕʘ‿ʘʔ',
+        '(=´ェ`=)', '∪･ω･∪', '(=①ω①=)', '(=✪ ω ✪=)', 'ʕ ᵔᴥᵔ ʔ',
+        '(=①ω①=)', '(=ｘωx=)', '(=⌒‿‿⌒=)', 'ˁ˚ᴗ˚ˀ', '(=фωф=)',
+    ]},
+];
+
 const TOOL_CATALOG = {
     ctrl: 'ctrlTool',
     ime: 'imeSwitchButton',
@@ -418,7 +541,12 @@ const TOOL_CATALOG = {
     // buildToggleTools 照样建按钮，但 setupToolbarEditor 的接线循环
     // 遍历的是本目录——池里那颗点不动也拖不了（真机实录）。
     custom: 'toolCustom',
+    // #67 颜文字面板：默认不上栏，用户从工具编辑仓库自选。
+    kaomoji: 'toolKaomoji',
 };
+// #H 硬键盘接字符的模式（design §2，与 native hwCharModes 同源集）。
+const HW_TEXT_MODES = new Set(['pinyin', 'double-pinyin', 'flypy', 'french', 'russian', 'japanese']);
+
 const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites', 'mic'] };
     const MIN_NATIVE_API = 1;
     const REQUIRED_CAPABILITIES = [
@@ -613,7 +741,7 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
     // 少数 icon 用文字字形而非几何 path：数字键盘的九宫格点阵被反馈
     // 「含义不明（像二维码）」，「123」数字本身一眼可读（iOS 数字键
     // 同款语义）。文字走 <text>，其余 icon 保持单 path 实心填充。
-    const ICON_TEXTS = { numpad: '123' };
+    const ICON_TEXTS = { numpad: '123', kaomoji: '^_^' };
     const ICONS = {};
     // 文字 icon 不在 ICON_PATHS 里，构建源要并上它们（否则 ICONS.numpad
     // 缺席，cloneNode 时才炸）。
@@ -655,27 +783,44 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
     // the delete key and row 4 carries ABC | sliding categories | enter.
     const ZH_COMMON_ROWS = [
         ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'],
-        ['，', '。', '、', '；', '：', '？', '！', '～', '（', '）'],
-        ['“', '”', '‘', '’', '《', '》', '〈', '〉', '…'],
+        // 行首两位是半角 +/-（用户需求：数学/列表高频，中式标点已被
+        // 主键盘标点槽与 T9/手写左列覆盖）；、；：？！～（）仍是全角。
+        // 前 30 格是历史面（有测试按序冻结），追加行只允许往后放。
+        ['+', '-', '、', '；', '：', '？', '！', '～', '（', '）'],
+        ['“', '”', '‘', '’', '《', '》', '〈', '〉', '…', '·'],
+        // 2026-10-28 用户定案：常用页扩到 60（6 行，可上滑）——
+        // 破折号/人民币/温度/章节号、全角技术符、括号补系。
+        ['—', '￥', '℃', '℉', '§', '№', '＠', '＃', '＊', '＆'],
+        ['％', '＋', '＝', '＼', '／', '｜', '［', '］', '｛', '｝'],
+        ['〔', '〕', '〖', '〗', '【', '】', '＜', '＞', '々', '〇'],
     ];
     const EN_COMMON_ROWS = [
         ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'],
-        ['-', '/', ':', ';', '(', ')', '&', '@', '+', '='],
-        ['.', ',', '?', '!', '"', "'", '*', '#', '%'],
+        // 2026-11-05 用户定案：& 挪去第 4 行，原位给 |（半角竖线，
+        // 引号 En 页那个 | 藏得太深）。
+        ['-', '/', ':', ';', '(', ')', '|', '@', '+', '='],
+        // # 同挪第 4 行，原位给 \（半角反斜杠，此前整键不可达）。
+        ['.', ',', '?', '!', '"', "'", '*', '\\', '%', '^'],
+        // & # 打头进第 4 行；原 4-6 行字符顺延不删（用户定案：常用
+        // 可以不止 6 行），尾行短行由渲染层补空格垫齐。
+        ['&', '#', '°', '±', '×', '÷', 'µ', '©', '®', '™'],
+        ['§', '¶', '†', '‡', '•', '‰', '¤', 'ª', 'º', '¨'],
+        ['¦', '`', '–', '—', '‹', '›', '«', '»', '{', '}'],
+        ['[', ']'],
     ];
     // The 引号 table's zh side (the only quote table until the 中/En
     // toggle landed): fullwidth CJK quotes and brackets.
     const ZH_QUOTE_ROWS = [
         ['“', '”', '‘', '’', '„', '‟', '«', '»', '‹', '›'],
         ['「', '」', '『', '』', '【', '】', '〖', '〗', '〔', '〕'],
-        ['《', '》', '〈', '〉', '［', '］', '｛', '｝', '＃'],
+        ['《', '》', '〈', '〉', '［', '］', '｛', '｝', '＃', '﹁'],
     ];
     // The 引号 table's en side: ASCII quotes and brackets the zh table
     // has no room for ([ ] were unreachable on the whole keyboard).
     const EN_QUOTE_ROWS = [
         ['[', ']', '{', '}', '(', ')', '<', '>', '\'', '"'],
         ['`', '*', '/', '\\', '|', '~', '^', '&', '@', '#'],
-        ['$', '%', '=', '+', '_', '«', '»', '‹', '›'],
+        ['$', '%', '=', '+', '_', '«', '»', '‹', '›', '§'],
     ];
     // Categories shipping a 中/En table pair; a second tap on the ACTIVE
     // tab flips the pin (design §2.4).
@@ -790,27 +935,58 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
             rows: [
                 ['$', '€', '£', '¥', '₩', '₽', '₹', '₫', '฿', '¢'],
                 ['¤', '₴', '₦', '₲', '₱', '﷼', '₪', '₭', '₮', '₯'],
-                ['％', '＄', '＆'],
+                ['₿', '₺', '₼', '₾', 'ƒ', '৳', '₡', '₵', '₸', '₠'],
+                ['₢', '₣', '₤', '₥', '₧', '₨', '₳', '％', '＄', '＆'],
             ],
         },
         {
             id: 'math', label: '数学',
             rows: [
-                ['±', '×', '÷', '≠', '≈', '≤', '≥', '∞', '√', '°'],
-                ['∑', '∫', '∏', '∈', '∉', '⊂', '⊃', '∪', '∩', '∅'],
-                ['′', '″', '‰', '⊕', '⊗', '⊙', '∵', '∴', '⊥'],
+                // 行首 + -（2026-10-28 用户定案：数学页最常用的两个符号
+                // 打头）；尾部去掉 ∘ ≔ 冷门符保持 60 整。
+                ['+', '-', '±', '×', '÷', '≠', '≈', '≤', '≥', '∞'],
+                ['√', '°', '∑', '∫', '∏', '∈', '∉', '⊂', '⊃', '∪'],
+                ['∩', '∅', '′', '″', '‰', '⊕', '⊗', '⊙', '∵', '∴'],
+                ['⊥', '≡', '≃', '≅', '∝', '∠', '∧', '∨', '¬', '∃'],
+                ['∀', '⊆', '⊇', '⊖', '⊘', '∖', '∂', '∇', 'ℵ', '−'],
+                ['∎', '⌈', '⌉', '⌊', '⌋', '∘', '∗', '⋅', '∓', '∷'],
             ],
         },
         // 特殊（#64，微信输入法「图形」tab 同类）：星形/勾叉/国际象棋/
-        // 扑克/音符的单色文本符号。3×10 网格行三末位是 ⌫，满打 29 格。
-        // 与 emoji 面板的「表情」分类（彩色 emoji）互不冲突：这里走
-        // sendSymbol 文本直上屏，含 VS16 的彩色形态仍在 emoji 侧。
+        // 扑克/音符的单色文本符号。与 emoji 面板的「表情」分类（彩色
+        // emoji）互不冲突：这里走 sendSymbol 文本直上屏，含 VS16 的
+        // 彩色形态仍在 emoji 侧。前 3 行是历史面（有守门测试逐字冻结），
+        // 新增行只允许追加。
         {
             id: 'special', label: '特殊',
             rows: [
                 ['★', '☆', '✦', '✧', '✩', '✓', '✔', '✗', '✘', '☑'],
                 ['♔', '♕', '♖', '♗', '♘', '♙', '♚', '♛', '♜', '♝'],
                 ['♞', '♟', '♤', '♥', '♦', '♧', '♩', '♪', '♫'],
+                ['□', '■', '▢', '▣', '▤', '▥', '▦', '▧', '▨', '▩'],
+                ['◐', '◑', '◒', '◓', '◕', '◇', '◆', '◈', '○', '◎'],
+                ['●', '☐', '☒', '♡', '♢', '▲', '▼', '◄', '►', '▬'],
+                ['◢'],
+            ],
+        },
+        // 制表（box-drawing）：单线/双线/混合线/圆角/斜线/半格，
+        // 排版表格与代码注释用。全部 U+2500-257F 单 BMP。
+        {
+            id: 'boxdraw', label: '制表',
+            rows: [
+                ['─', '━', '│', '┃', '┄', '┅', '┆', '┇', '┈', '┉'],
+                ['┊', '┋', '╴', '╵', '╶', '╷', '╸', '╹', '╺', '╻'],
+                ['┌', '┍', '┎', '┏', '┐', '┑', '┒', '┓', '└', '┕'],
+                ['┖', '┗', '┘', '┙', '┚', '┛', '├', '┝', '┞', '┟'],
+                ['┠', '┡', '┢', '┣', '┤', '┥', '┦', '┧', '┨', '┩'],
+                ['┪', '┫', '┬', '┭', '┮', '┯', '┰', '┱', '┲', '┳'],
+                ['┴', '┵', '┶', '┷', '┸', '┹', '┺', '┻', '┼', '┽'],
+                ['┾', '┿', '╀', '╁', '╂', '╃', '╄', '╅', '╆', '╇'],
+                ['╈', '╉', '╋', '╭', '╮', '╯', '╰', '╱', '╲'],
+                ['╳', '╿', '═', '║', '╒', '╓', '╔', '╕', '╖', '╗'],
+                ['╘', '╙', '╚', '╛', '╜', '╝', '╞', '╟', '╠', '╡'],
+                ['╢', '╣', '╤', '╥', '╦', '╧', '╨', '╩', '╪', '╫'],
+                ['╬'],
             ],
         },
         // The 方向 category fires HOST key events, not text - it has no
@@ -822,7 +998,19 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
             rows: [
                 ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨', '⑩'],
                 ['⑪', '⑫', '⑬', '⑭', '⑮', '⑯', '⑰', '⑱', '⑲', '⑳'],
-                ['⒈', '⒉', '⒊', '⒋', '⒌', '⒍', '⒎', '⒏', '⒐'],
+                ['⒈', '⒉', '⒊', '⒋', '⒌', '⒍', '⒎', '⒏', '⒐', '⒑'],
+                ['⒒', '⒓', '⒔', '⒕', '⒖', '⒗', '⒘', '⒙', '⒚', '⒛'],
+                ['⑴', '⑵', '⑶', '⑷', '⑸', '⑹', '⑺', '⑻', '⑼', '⑽'],
+                ['⑾', '⑿', '⒀', '⒁', '⒂', '⒃', '⒄', '⒅', '⒆', '⒇'],
+                ['Ⅰ', 'Ⅱ', 'Ⅲ', 'Ⅳ', 'Ⅴ', 'Ⅵ', 'Ⅶ', 'Ⅷ', 'Ⅸ', 'Ⅹ'],
+                ['Ⅺ', 'Ⅻ', 'ⅰ', 'ⅱ', 'ⅲ', 'ⅳ', 'ⅴ', 'ⅵ', 'ⅶ', 'ⅷ'],
+                ['ⅸ', 'ⅹ', 'ⅺ', 'ⅻ', '㈠', '㈡', '㈢', '㈣', '㈤', '㈥'],
+                ['㈦', '㈧', '㈨', '㈩', '㊀', '㊁', '㊂', '㊄', '㊅', '㊆'],
+                ['㊇', '㊈', '㊉', '⓪', '㉑', '㉒', '㉓', '㉔', '㉕', '㉖'],
+                ['㉗', '㉘', '㉙', '㉚', '㉛', '㉜', '㉝', '㉞', '㉟', '㊱'],
+                ['㊲', '㊳', '㊴', '㊵', '㊶', '㊷', '㊹', '㊺', '㊻', '㊼'],
+                ['㊽', '㊾', '㊿'],
+                ['⓫', '⓬', '⓭', '⓮', '⓯', '⓰', '⓱'],
             ],
         },
         {
@@ -830,23 +1018,59 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
             rows: [
                 ['ā', 'á', 'ǎ', 'à', 'ō', 'ó', 'ǒ', 'ò', 'ē', 'é'],
                 ['ě', 'è', 'ī', 'í', 'ǐ', 'ì', 'ū', 'ú', 'ǔ', 'ù'],
-                ['ǖ', 'ǘ', 'ǚ', 'ǜ', 'ü', 'ê', 'Ā', 'Á', 'Ǎ'],
+                ['ǖ', 'ǘ', 'ǚ', 'ǜ', 'ü', 'ê', 'ń', 'ň', 'ǹ'],
+                ['Ā', 'Á', 'Ǎ', 'À', 'Ō', 'Ó', 'Ǒ', 'Ò', 'Ē', 'É'],
+                ['Ě', 'È', 'Ī', 'Í', 'Ǐ', 'Ì', 'Ū', 'Ú', 'Ǔ', 'Ù'],
+                ['Ǖ', 'Ǘ', 'Ǚ', 'Ǜ', 'Ü', 'Ê', 'Ń', 'Ň', 'Ǹ'],
+                // 法语/北欧/德语/西语/捷克等拉丁标注。
+                ['à', 'â', 'ä', 'é', 'è', 'ê', 'ë', 'î', 'ï', 'ô'],
+                ['ù', 'û', 'ü', 'ç', 'œ', 'æ', 'ÿ', 'ø', 'å', 'ñ'],
+                ['ã', 'õ', 'ì', 'ò', 'ý', 'č', 'š', 'ž', '¿', '¡'],
+                ['ř', 'ź'],
             ],
         },
         {
             id: 'hira', label: '平假名',
             rows: [
+                // 标准五十音图（2026-10-28 用户定案：先清音按图排，再按
+                // 图序排促音/小书き、清浊音、半浊音，最后记号）。
                 ['あ', 'い', 'う', 'え', 'お', 'か', 'き', 'く', 'け', 'こ'],
                 ['さ', 'し', 'す', 'せ', 'そ', 'た', 'ち', 'つ', 'て', 'と'],
-                ['な', 'に', 'ぬ', 'ね', 'の', 'は', 'ひ', 'ふ', 'へ'],
+                ['な', 'に', 'ぬ', 'ね', 'の', 'は', 'ひ', 'ふ', 'へ', 'ほ'],
+                ['ま', 'み', 'む', 'め', 'も', 'や', 'ゆ', 'よ', 'ら', 'り'],
+                ['る', 'れ', 'ろ', 'わ', 'を', 'ん'],
+                // 促音 + 小书き（五十音图序）。
+                ['っ', 'ぁ', 'ぃ', 'ぅ', 'ぇ', 'ぉ', 'ゃ', 'ゅ', 'ょ', 'ゎ'],
+                // 清浊音（か/さ/た/ば 各行按图序）。
+                ['が', 'ぎ', 'ぐ', 'げ', 'ご', 'ざ', 'じ', 'ず', 'ぜ', 'ぞ'],
+                ['だ', 'ぢ', 'づ', 'で', 'ど', 'ば', 'び', 'ぶ', 'べ', 'ぼ'],
+                // 半浊音。
+                ['ぱ', 'ぴ', 'ぷ', 'ぺ', 'ぽ'],
+                // 记号：ゐゑ、ー 长音、゛゜（U+309B/C 间隔形，禁组合形）、
+                // ゝゞ 繰り返し、中点、〆。
+                ['ゐ', 'ゑ', 'ー', '゛', '゜', 'ゝ', 'ゞ', '・', '〆'],
             ],
         },
         {
             id: 'kata', label: '片假名',
             rows: [
+                // 标准五十音图（与平假名同构：清音 → 促音/小书き →
+                // 清浊音含ヴ → 半浊音 → 记号）。
                 ['ア', 'イ', 'ウ', 'エ', 'オ', 'カ', 'キ', 'ク', 'ケ', 'コ'],
                 ['サ', 'シ', 'ス', 'セ', 'ソ', 'タ', 'チ', 'ツ', 'テ', 'ト'],
-                ['ナ', 'ニ', 'ヌ', 'ネ', 'ノ', 'ハ', 'ヒ', 'フ', 'ヘ'],
+                ['ナ', 'ニ', 'ヌ', 'ネ', 'ノ', 'ハ', 'ヒ', 'フ', 'ヘ', 'ホ'],
+                ['マ', 'ミ', 'ム', 'メ', 'モ', 'ヤ', 'ユ', 'ヨ', 'ラ', 'リ'],
+                ['ル', 'レ', 'ロ', 'ワ', 'ヲ', 'ン'],
+                // 促音 + 小书き（五十音图序）。
+                ['ッ', 'ァ', 'ィ', 'ゥ', 'ェ', 'ォ', 'ャ', 'ュ', 'ョ', 'ヮ'],
+                // 清浊音（カ/サ/タ/バ 各行按图序，ヴ=ウ 段浊音收尾）。
+                ['ガ', 'ギ', 'グ', 'ゲ', 'ゴ', 'ザ', 'ジ', 'ズ', 'ゼ', 'ゾ'],
+                ['ダ', 'ヂ', 'ヅ', 'デ', 'ド', 'バ', 'ビ', 'ブ', 'ベ', 'ボ'],
+                ['ヴ'],
+                // 半浊音。
+                ['パ', 'ピ', 'プ', 'ペ', 'ポ'],
+                // 记号：ヰヱ、ー 长音、゛゜（间隔形）、ヽヾ 繰り返し、中点。
+                ['ヰ', 'ヱ', 'ー', '゛', '゜', 'ヽ', 'ヾ', '・'],
             ],
         },
         {
@@ -854,7 +1078,12 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
             rows: [
                 ['Α', 'Β', 'Γ', 'Δ', 'Ε', 'Ζ', 'Η', 'Θ', 'Ι', 'Κ'],
                 ['Λ', 'Μ', 'Ν', 'Ξ', 'Ο', 'Π', 'Ρ', 'Σ', 'Τ', 'Υ'],
-                ['Φ', 'Χ', 'Ψ', 'Ω', 'α', 'β', 'γ', 'δ', 'ε'],
+                ['Φ', 'Χ', 'Ψ', 'Ω', 'α', 'β', 'γ', 'δ', 'ε', 'ζ'],
+                ['η', 'θ', 'ι', 'κ', 'λ', 'μ', 'ν', 'ξ', 'ο', 'π'],
+                ['ρ', 'σ', 'ς', 'τ', 'υ', 'φ', 'χ', 'ψ', 'ω'],
+                ['ά', 'έ', 'ή', 'ί', 'ό', 'ύ', 'ώ', 'ϊ', 'ϋ', 'ΐ'],
+                ['ΰ', 'Ά', 'Έ', 'Ή', 'Ί', 'Ό', 'Ώ', 'ϖ', 'ϱ', 'ϲ'],
+                ['ϴ'],
             ],
         },
     ];
@@ -941,9 +1170,10 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
     // 右列滚动符号列（round-6）：T9/数字面板左列同款形态——常驻滚动
     // 列表，视口露出前三格（，。？），上滑滚出更多，点按直上屏。
     const INK_SIDE_SYMBOLS = ['，', '。', '？', '！', '：', '；', '、', '～', '……', '·', '＃', '＠'];
-    // 空书写区的三行提示（round-5，用户反馈）：首行是动作，后两行是
-    // 预期管理——模型能力有限、连笔拖识别率。双语走 UI_EN。
-    const INK_HINT_LINES = ['在此手写', '模型能力有限', '避免连笔以提高识别率'];
+    // 空书写区的两行提示：首行是动作，次行兜底建议。原「模型能力
+    // 有限、避免连笔以提高识别率」按用户反馈弱化（2026-11-01，模型
+    // v2 后能力提升，训诫式文案不再合适）。双语走 UI_EN。
+    const INK_HINT_LINES = ['在此手写', '如未识别，请减少连笔'];
     // 手写停笔→识别的触发延时档位（设置页「手写」区块，hello 下发）。
     // 实时识别（模型 v2 后推理毫秒级，issue #32）：每笔 touchend 立即识别，
     // 候选随笔画刷新（wetype 同款体验）。识别时机不再可配（停顿档已被
@@ -1198,6 +1428,22 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
     const DP_KEYMAP = {"ziranma":{"q":"iu","w":"ua/ia","e":null,"r":"uan/er","t":"ue/ve","y":"ing/uai","u":"sh","i":"ch","o":"uo","p":"un","a":null,"s":"ong/iong","d":"iang/uang","f":"en","g":"eng","h":"ang","j":"an","k":"ao","l":"ai","z":"ei","x":"ie","c":"iao","v":"zh/ui ü","b":"ou","n":"in","m":"ian"},"flypy":{"q":"iu","w":"ei","e":null,"r":"uan/er","t":"ue/ve","y":"un","u":"sh","i":"ch","o":"uo","p":"ie","a":null,"s":"ong/iong","d":"ai","f":"en","g":"eng","h":"ang","j":"an","k":"ing/uai","l":"iang/uang","z":"ou","x":"ua/ia","c":"ao","v":"zh/ui ü","b":"in","n":"iao","m":"ian"},"sogou":{"q":"iu","w":"ua/ia","e":null,"r":"uan/er","t":"ue/ve","y":"uai","u":"sh","i":"ch","o":"uo","p":"un","a":null,"s":"ong/iong","d":"iang/uang","f":"en","g":"eng","h":"ang","j":"an","k":"ao","l":"ai","z":"ei","x":"ie","c":"iao","v":"zh/ui","b":"ou","n":"in","m":"ian"},"ziguang":{"q":"ao","w":"en","e":null,"r":"an","t":"eng","y":"uai/in","u":"zh","i":"sh","o":"uo","p":"ai","a":"ch","s":"ang","d":"ie","f":"ian","g":"iang/uang","h":"ong/iong","j":"iu/er","k":"ei","l":"uan","z":"ou","x":"ua/ia","v":null,"b":"iao","n":"ui üe","m":"un"}};
     // END GENERATED SCHEMA_MAP
 
+    // 与 OchwproInk.decimate 保持 Float 舍入口径；原始点数供 native
+    // 校验，逐笔取整超出 48 时也不再抽一次，确保模型拿到同一组点。
+    function decimateInkStrokes(strokes, maxPoints = 48) {
+        const total = strokes.reduce((n, stroke) => n + stroke.length, 0);
+        if (total <= maxPoints) return strokes;
+        const scale = Math.fround(maxPoints / Math.fround(total));
+        return strokes.map(stroke => {
+            const keep = Math.max(1, Math.min(stroke.length,
+                Math.round(Math.fround(stroke.length * scale))));
+            if (keep >= stroke.length) return stroke;
+            const span = Math.max(1, keep - 1);
+            return Array.from({ length: keep }, (_, j) =>
+                stroke[Math.floor(j * (stroke.length - 1) / span)]);
+        });
+    }
+
     class FeelimeKeyboard {
         constructor() {
             this.token = '';
@@ -1206,6 +1452,11 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
             this.engineReady = {};
             this.shift = false;
             this.caps = false;
+            // #63 双击 Shift 锁定：上次确认 tap 的墙钟（Date.now——测试
+            // 沙箱不提供 performance，FakeDate 才可推进）。初始 -Infinity：
+            // 沙箱假时钟从 0 起步，初始 0 会让第一击被误判成双击
+            // （真实墙钟是大纪元值不会踩，但语义上也要「从未 tap 过」）。
+            this.lastShiftTapAt = -Infinity;
             this.voiceState = 'idle';
             this.editorSensitive = false;
             this.composing = false;
@@ -1237,6 +1488,8 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
             // borrowed it for letters - openPanel must re-capture THIS.
             this.panelEditorKeyLayer = null;
             this.panelTab = 'clipboard';
+            // #67 颜文字面板：当前分类（跨开合记住）。
+            this.kaomojiTab = KAOMOJI_TABS[0].id;
             this.panelOpen = false;
             // Control-key layer state - the toolbar swap, the
             // sticky Ctrl/Alt/Meta modifiers and the open combo grid.
@@ -1367,6 +1620,9 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
             // 符号/重音）、下滑=大写；互换后对调。真相源是 native pref
             // flick_swap，hello 下发。
             this.flickSwap = false;
+            // #63 双击 Shift 锁定大写（与长按锁定共存；默认开，native
+            // pref double_shift_lock 经 hello 下发）。
+            this.doubleShiftLock = true;
             // Popup swipe selection range: 0=loose 1.4x, 1=standard 1.0x,
             // 2=tight 0.7x — scales the relative-tracking jitter dead zone
             // and the card-boundary cancel slop (selection itself stays
@@ -1377,6 +1633,10 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
             this.bottomPad = 0;
             // Candidate text scale: 80-150 continuous % (issue #42).
             this.candidateFont = 100;
+            // 键帽字号（issue #70）：50-150 连续百分比，缩小侧比候选字号更宽。
+            this.keycapFont = 100;
+            // 用户字体（issue #70）：当前生效的 digest；空 = 系统字体栈。
+            this.userFontDigest = "";
             // 拼音字号（issue #8）：0/1/2 三档，hello 回读（旧 APK 的 hello
             // 没有该字段时保持默认档 = 原始 13px 悬浮带）。加粗开关默认关。
             this.preeditFont = 0;
@@ -1441,6 +1701,30 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
             this.seenDegradeSeq = 0;
             // Quick keyboard pair for the space-adjacent toggle.
             this.quickPair = ['pinyin', 'direct'];
+            // #H 硬件键盘队列状态（design §4.1）。
+            this.hwQueue = [];
+            this.hwDraining = false;
+            this.hwDrainTimer = null;
+            this.hwWaitSeq = 0;
+            this.hwSeqCounter = 0;
+            this.hwDoneSeq = 0;
+            // #H 会话代数（codex 评审 P1-1）：native hwKey 注入携带，队列
+            // 与全部续步（含两步标点）贯穿；drain 时旧 gen 丢弃。
+            this.hwGen = 0;
+            // #H 上报时序（codex 评审 P1-8）：首个引擎状态到达后才报
+            // reportHwKeys（design §6）——hello 重握手时已见过状态则立即补报。
+            this.hwStateSeen = false;
+            this.hwReported = false;
+            this.hwPanelHeightSent = null;
+            this.hardwareKeyboard = false;
+            this.hwkbForm = 'candidates';
+            // #H 快捷切换策略（codex 双拼事故二轮定案）：follow=当前
+            // 键盘↔英文（英文侧返回 quickReturnMode——native 是真相源，
+            // JS 只持快照）；fixed=固定配对（存量）。
+            this.quickSwitchPolicy = 'fixed';
+            this.quickReturnMode = 'pinyin';
+            // 切换成功 toast 的意图回执窗（quickSwitchTarget 发出后等
+            // 权威 mode 回声，回声匹配才提示——不乐观弹）。
             try {
                 const speed = parseInt(localStorage.getItem('feelime_scrub_speed') || '3', 10);
                 if (speed >= 1 && speed <= 5) this.scrubSpeed = speed;
@@ -1476,6 +1760,11 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
             // mock 环境没有 FeelimeNative/rAF，构造即跳过）；token 未握手
             // 前心跳同样跳过。
             this._diagTouch = 0;
+            // 触摸代际（每次 pointerdown 递增，真实/合成同计数）：native
+            // allUp 治理注入的清理脚本在 renderer 执行时用它自检——从
+            // audit 查询到注入落地的窗口里若有新按下（快打连击），代际
+            // 已变，清理必须放弃（codex review P1：注入执行时防线）。
+            this.touchEpoch = 0;
             this._diagRafAt = 0;
             this._diagCallBlocked = 0;
             this._diagNoClick = { swipe: 0, pop: 0, long: 0 };
@@ -1484,17 +1773,12 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
             // 侧 touchCancel 行（屏幕坐标+手势条距离）双通道对账。
             this._diagCancel = 0;
             if (window.FeelimeNative && typeof window.setInterval === 'function') {
-                if (typeof requestAnimationFrame === 'function') {
-                    const diagRafLoop = () => {
-                        this._diagRafAt = Date.now();
-                        requestAnimationFrame(diagRafLoop);
-                    };
-                    requestAnimationFrame(diagRafLoop);
-                }
+                this._diagRaf = null;
+                this._diagInterval = null;
                 window.addEventListener(
-                    'pointerdown', () => { this._diagTouch += 1; },
+                    'pointerdown', () => { if (this.touchDiagnostics) this._diagTouch += 1; },
                     { capture: true, passive: true });
-                const onDiagCancel = () => { this._diagCancel += 1; };
+                const onDiagCancel = () => { if (this.touchDiagnostics) this._diagCancel += 1; };
                 window.addEventListener('touchcancel', onDiagCancel, { capture: true, passive: true });
                 window.addEventListener('pointercancel', onDiagCancel, { capture: true, passive: true });
                 // rAF 探针盲区修正（codex 六期 review）：2600ms 窗口会被
@@ -1503,8 +1787,8 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
                 document.addEventListener('visibilitychange', () => {
                     if (!document.hidden) this._diagRafAt = 0;
                 });
-                window.setInterval(() => {
-                    if (!this.token || typeof Native.diagEvent !== 'function') return;
+                this._diagHeartbeat = () => {
+                    if (!this.touchDiagnostics || !this.token || typeof Native.diagEvent !== 'function') return;
                     const rafAlive = Date.now() - this._diagRafAt < 2600;
                     // #12 复发取证：touch=触摸到达数；blocked=call 门闸
                     // 拒绝；noClick=swipe滑动手势/pop弹层/long长按各吞掉的
@@ -1538,8 +1822,28 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
                     this._diagCallBlocked = 0;
                     this._diagNoClick = { swipe: 0, pop: 0, long: 0 };
                     window.__diagStates = 0;
-                }, 2500);
+                };
             }
+        }
+
+        syncDiagnosticProbe() {
+            if (!this.touchDiagnostics) {
+                if (this._diagRaf != null) cancelAnimationFrame(this._diagRaf);
+                if (this._diagInterval != null) window.clearInterval(this._diagInterval);
+                this._diagRaf = this._diagInterval = null;
+                this._diagRafAt = 0;
+                return;
+            }
+            if (!this._diagHeartbeat || this._diagInterval != null) return;
+            this._diagTouch = this._diagCancel = this._diagCallBlocked = 0;
+            this._diagNoClick = { swipe: 0, pop: 0, long: 0 };
+            const tick = () => {
+                if (!this.touchDiagnostics) return;
+                this._diagRafAt = Date.now();
+                this._diagRaf = requestAnimationFrame(tick);
+            };
+            if (typeof requestAnimationFrame === 'function') this._diagRaf = requestAnimationFrame(tick);
+            this._diagInterval = window.setInterval(this._diagHeartbeat, 2500);
         }
 
         setup() {
@@ -1667,6 +1971,23 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
             document.querySelector('[data-action="letters"]').addEventListener('click', () => this.showLetters());
             this.renderSymbolCats();
             document.getElementById('setupButton').addEventListener('click', () => this.toggleSettingsPanel());
+            // #H 候选条形态快捷切换键（#87 顺带优化）：点按翻快捷对、
+            // 长按完整模式菜单（软键盘 modeToggle 同交互）。菜单收起的
+            // 落点点击由 modeMenuAnchor 的 _suppressClick 机制吞掉。
+            {
+                const hwTag = document.getElementById('hwModeTag');
+                if (hwTag) {
+                    hwTag.dataset.lp = 'mode-menu';
+                    hwTag.addEventListener('click', () => {
+                        if (hwTag._suppressClick) {
+                            hwTag._suppressClick = false;
+                            return;
+                        }
+                        this.toggleChineseEnglish();
+                    });
+                    this.bindTouch(hwTag);
+                }
+            }
             // #39-6（手写容易退出，诊断定罪）：工具栏就在书写区正上方，
             // 书写划上去的笔迹若落笔抬笔都在按钮上（如齿轮），会合成
             // click 直达 openSetup——设置页顶掉键盘，用户看到的就是
@@ -1701,8 +2022,14 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
                     this.call(() => Native.openSetup(this.token));
                 });
             }
-            // Symbol layer row 4 : the enter key lives there too.
-            document.getElementById('symEnterKey').addEventListener('click', () => this.call(() => Native.enter(this.token)));
+            // Symbol layer row 4 = ABC | 分类条 | ⌫：⌫ 占换行键原位
+            // （符号层不设换行，2026-10-28 用户定案）。网格不再携带
+            // 删除键；bar 在滚动容器外，bindTouch 合法——长按连删保留。
+            document.getElementById('symCatBar').insertBefore(
+                this.specialKey('backspace', ICONS.backspace,
+                    () => this.backspaceAction(),
+                    'sym-bar-del', 'repeat'),
+                null);
             this.setupToolbarEditor && this.setupToolbarEditor();
             // 单手模式侧边条（issue #15）：光标四向发 DPAD 键事件（与物理
             // 方向键同通道，终端 cursor 语义兼容），全选/复制/剪切/粘贴走
@@ -1751,7 +2078,15 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
             editorInput.addEventListener('focus', () => this.setPanelInput(true));
             document.querySelectorAll('.phrase-input').forEach(field => {
                 field.addEventListener('focus', () => this.reportPanelSelection());
-                ['input', 'select', 'click', 'keyup'].forEach(name =>
+                // 真实编辑（input）才作废手势快照：程序化 value 赋值不触发
+                // input（浏览器契约），select/click/keyup 只是位置报告——
+                // 面板写入自身的异步 select 回声不得清掉刚存的快照
+                // （codex 复审 P1，真实 Chromium 复现）。
+                field.addEventListener('input', () => {
+                    field.__imeDeleteSnapshot = null;
+                    this.reportPanelSelection();
+                });
+                ['select', 'click', 'keyup'].forEach(name =>
                     field.addEventListener(name, () => this.reportPanelSelection()));
             });
             editorInput.addEventListener('blur', () => {
@@ -1999,13 +2334,15 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
         /** 退格键帽统一出口（issue #46）：开关开启且处于联想让位态
          *  （无组合）时，退格等效 × ——清联想恢复工具栏、不动编辑框；
          *  其余情况照旧走原生删除（回执透传给 #34 回滑恢复）。 */
-        backspaceAction() {
+        backspaceAction(hwSeq, hwGen) {
             if (this.backspaceAssocOn && this.assocWords.length && !this.composing) {
                 this.assocWords = [];
                 this.renderCandidates(this.lastEngineState || {});
                 return true;
             }
-            return this.call(() => Native.backspace(this.token));
+            return this.call(() => hwSeq && typeof Native.hwBackspace === 'function'
+                ? Native.hwBackspace(hwSeq, hwGen, this.token)
+                : Native.backspace(this.token));
         }
 
         isChineseMode() {
@@ -2489,16 +2826,32 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
          * gcc 构建正常，机制未明，见 keyboard.md §9.6），先按 id 确认池头
          * 候选，回声收掉组合后 commitText 直发全角标点；空闲态照旧发
          * ASCII 走引擎 punctuator 转全角。 */
-        enginePunct(ascii) {
+        enginePunct(ascii, hwSeq, hwGen) {
             const fullwidth = ascii === ',' ? '，' : '。';
+            // #H 空闲标点（codex 复审 P1-1 残余）：不走 sendText→
+            // Native.key（无会话身份）——hw 路径直发 hwKeyChar（带
+            // gen 终检 + consumed=false 时 coordinator 原子补交 ASCII
+            // 字面，与软键盘「引擎 punctuator 转全角」同语义）。旧壳
+            // 无此桥回退 sendText。
+            if (hwSeq !== undefined && hwSeq !== null && !this.composing) {
+                this.call(() => typeof Native.hwKeyChar === 'function'
+                    ? Native.hwKeyChar(ascii, hwSeq, hwGen, this.token)
+                    : this.sendText(ascii));
+                return;
+            }
             if (this.composing) {
                 // 标点确认走重排后的池头：与空格/点击同一排序（codex P1：
-                // 候选条看英文、逗号却确认中文）。
+                // 候选条看英文、逗号却确认中文）。hw 路径带 seq/gen（codex
+                // 代码评审 P1-6：选词走 hwChoose 挂水位，第二步记 gen——
+                // 跨会话的迟到补发不得落进新编辑器）。
                 const candidate = this.englishOrderedPool(this.expandCandidates || []).find(item =>
                     !String(item.id).startsWith('alt:'));
                 if (candidate) {
-                    this.pendingPunct = { text: fullwidth, raw: this.lastRawInput, at: Date.now() };
-                    this.choosePoolCandidate(candidate);
+                    this.pendingPunct = {
+                        text: fullwidth, raw: this.lastRawInput, at: Date.now(),
+                        ...(hwGen !== undefined ? { gen: hwGen } : {}),
+                    };
+                    this.choosePoolCandidate(candidate, hwSeq, hwGen);
                     return;
                 }
             }
@@ -2758,9 +3111,18 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
             // 期间设置页把 native 高度改低于手写下限时，kbHeight 旧值仍
             // 等于 desired → 永不发桥 → 面板可写高度不足。以「JS 认知与
             // native 权威值取大」为基准，任一低于下限就重推。
+            // 2026-11-01 用户裁决：内容地板（inkDesiredHeight 顶格感）撤
+            // 销，恢复 chrome+96 压塌底线——恢复默认=272 对所有模式一致，
+            // 手写不做自动抬升（「统一到矮的」回归本义）。
             const desired = Math.max(base, this.inkChromeHeight() + 96);
             const authoritative = Math.max(this.kbHeight, base);
-            if (authoritative !== desired) this.applyKbHeight(desired);
+            if (authoritative !== desired) {
+                this.applyKbHeight(desired);
+            } else if (this.kbHeight !== desired) {
+                // CSS 对账（hello 重推/远端改高后的重唤）：窗已是 desired，
+                // 只补本地布局，不发桥（回声纪律）。
+                this.applyKbHeightLocal(desired);
+            }
         }
 
         /** 「按权威值对齐本地布局」专用：不发高度桥、不写 pref。
@@ -2906,6 +3268,8 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
             const ratio = typeof window !== 'undefined' &&
                 typeof window.devicePixelRatio === 'number' && window.devicePixelRatio > 0
                 ? window.devicePixelRatio : 1;
+            this._inkRatio = ratio;
+            this._inkColor = this.inkColor();
             if (canvas.width === width * ratio && canvas.height === height * ratio) return;
             canvas.width = width * ratio;
             canvas.height = height * ratio;
@@ -2941,16 +3305,27 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
             const pad = document.getElementById('inkPad');
             if (pad) pad.classList.toggle('writing',
                 this.inkStrokes.length > 0 || (this.inkCurrent || []).length > 0);
+            if (this._inkFrame != null) return;
+            if (typeof requestAnimationFrame !== 'function') {
+                this.inkPaintFrame();
+                return;
+            }
+            this._inkFrame = requestAnimationFrame(() => {
+                this._inkFrame = null;
+                this.inkPaintFrame();
+            });
+        }
+
+        inkPaintFrame() {
             const context = this.inkContext();
             if (!context || typeof context.scale !== 'function') return;
             const canvas = document.getElementById('inkCanvas');
-            const ratio = canvas.width && canvas.clientWidth
-                ? canvas.width / canvas.clientWidth : 1;
+            const ratio = this._inkRatio || 1;
             context.clearRect(0, 0, canvas.width, canvas.height);
             context.lineWidth = 3.2 * ratio;
             context.lineCap = 'round';
             context.lineJoin = 'round';
-            context.strokeStyle = this.inkColor();
+            context.strokeStyle = this._inkColor || (this._inkColor = this.inkColor());
             context.beginPath();
             const all = this.inkCurrent && this.inkCurrent.length
                 ? this.inkStrokes.concat([this.inkCurrent])
@@ -2994,12 +3369,16 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
             const rect = canvas && typeof canvas.getBoundingClientRect === 'function'
                 ? canvas.getBoundingClientRect() : { width: 320, height: 132 };
             const round1 = value => Math.round(value * 10) / 10;
+            const strokes = this.inkStrokes.map(stroke =>
+                smoothInkStroke(stroke).map(point => [round1(point.x), round1(point.y)]));
             const payload = JSON.stringify({
                 w: Math.round(rect.width || 320),
                 h: Math.round(rect.height || 132),
-                strokes: this.inkStrokes.map(stroke =>
-                    smoothInkStroke(stroke).map(point => [round1(point.x), round1(point.y)])),
+                strokes: this.inkPredecimated ? decimateInkStrokes(strokes) : strokes,
+                originalStrokeSizes: this.inkPredecimated ? strokes.map(stroke => stroke.length) : undefined,
             });
+            // 与 native 门闸同预算，超限时不发送必被拒绝的请求。
+            if (payload.length > 4096) return;
             this.inkReqId += 1;
             this.call(() => Native.recognizeInk(this.inkReqId, payload, this.token));
         }
@@ -3378,6 +3757,28 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
             return button;
         }
 
+        /** 回车键业务动作（软键面 click 与硬件键盘 hwKey 同一入口，#H）：
+         * T9/笔画组合中=选池头候选，其余走 Native.enter。提取自原
+         * click 回调，行为零变化。 */
+        enterAction(hwSeq, hwGen) {
+            // T9/笔画组合中的确认键=提交高亮候选（用户定稿）。EnterRaw
+            // 会 ESCAPE+把原始输入串原样上屏（RimeTextEngine）——笔画
+            // 的组合串是 schema xlit 后的部件字形（一丨丿…），落进
+            // 编辑器就是乱码，同样必须拦截。repeat 长按在 T9 关闭：
+            // 确认后残留的 interval 点击会落进非组合分支连发换行。
+            if ((this.mode === 't9' || this.mode === 'stroke') && this.composing) {
+                const candidate = (this.expandCandidates || []).find(item =>
+                    !String(item.id).startsWith('alt:'));
+                if (candidate) {
+                    this.choosePoolCandidate(candidate, hwSeq, hwGen);
+                    return;
+                }
+            }
+            this.call(() => hwSeq && typeof Native.hwEnter === 'function'
+                ? Native.hwEnter(hwSeq, hwGen, this.token)
+                : Native.enter(this.token));
+        }
+
         enterKey(longPress = 'repeat') {
             const button = document.createElement('button');
             button.className = 'kb-key kb-special kb-wide-2_25';
@@ -3386,22 +3787,7 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
             if (longPress) button.dataset.lp = longPress;
             button.setAttribute('aria-label', this.composing ? t("确定") : t("换行"));
             button.textContent = this.composing ? t("确定") : t("换行");
-            button.addEventListener('click', () => {
-                // T9/笔画组合中的确认键=提交高亮候选（用户定稿）。EnterRaw
-                // 会 ESCAPE+把原始输入串原样上屏（RimeTextEngine）——笔画
-                // 的组合串是 schema xlit 后的部件字形（一丨丿…），落进
-                // 编辑器就是乱码，同样必须拦截。repeat 长按在 T9 关闭：
-                // 确认后残留的 interval 点击会落进非组合分支连发换行。
-                if ((this.mode === 't9' || this.mode === 'stroke') && this.composing) {
-                    const candidate = (this.expandCandidates || []).find(item =>
-                        !String(item.id).startsWith('alt:'));
-                    if (candidate) {
-                        this.choosePoolCandidate(candidate);
-                        return;
-                    }
-                }
-                this.call(() => Native.enter(this.token));
-            });
+            button.addEventListener('click', () => this.enterAction());
             this.bindTouch(button);
             return button;
         }
@@ -3412,39 +3798,42 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
          * 定制过的对不动（含用户特意选回 拼/En 的情形），改对走
          * 模式菜单/设置页的 快捷切换 入口。 */
         adoptQuickPairForHandwriting(nextMode) {
+            // codex 双拼事故二轮 §2.4：自动迁移职责退出运行时——follow
+            // 策略下手写按「手写↔英文」走，固定配对用户原样保留；旧
+            // lastKbMode 不再参与切换目标（quickSwitchTarget 不读它）。
+            // 仅保留 lastKbMode 记录（既有诊断/其它读取方不受影响）。
             if (nextMode !== 'handwriting') {
                 this.lastKbMode = nextMode;
                 try { localStorage.setItem('feelime_last_kb_mode', nextMode); } catch (_) {}
-                return;
             }
-            // 「用户从未定制过」以持久值为准：内存对可能滞后（备份恢复刚
-            // 写 storage、hello 尾部才同步内存），单看内存会把刚恢复的定制
-            // 对误迁成 手写↔X。
-            let savedPair = null;
-            try { savedPair = JSON.parse(localStorage.getItem('feelime_quick_pair') || 'null'); } catch (_) { /* unset */ }
-            const current = (Array.isArray(savedPair) && savedPair.length === 2) ? savedPair : this.quickPair;
-            const factory = current.length === 2 &&
-                current[0] === 'pinyin' && current[1] === 'direct';
-            if (!factory) return;
-            const other = this.lastKbMode && this.lastKbMode !== 'handwriting' &&
-                MODES[this.lastKbMode] ? this.lastKbMode : 'pinyin';
-            this.quickPair = ['handwriting', other];
-            try {
-                localStorage.setItem('feelime_quick_pair', JSON.stringify(this.quickPair));
-            } catch (_) {}
         }
 
         /** The saved pair alone determines the shortcut. A temporary mode
          * selected from the long-press menu returns to the first pair entry.
          * While a degrade fallback serves, the short press retries the
          * FAILED mode instead of toggling the pair (mode-fallback §2.3). */
+        /** #H 快捷切换目标（codex 双拼事故二轮定案）：软键盘切换键、
+         *  硬键 Ctrl+空格/Shift 单按、底行目标小字共用同一解析——
+         *  follow：当前键盘↔英文（英文侧回 quickReturnMode 记忆）；
+         *  fixed：固定配对翻转（配对外模式回 pair[0]，存量约定）。
+         *  降级重试优先级保留在上层调用处。 */
+        quickSwitchTarget() {
+            if ((this.quickSwitchPolicy || 'fixed') === 'fixed') {
+                const pair = this.quickPair;
+                return this.mode === pair[0] ? pair[1] : pair[0];
+            }
+            if (this.mode === 'direct') {
+                return MODES[this.quickReturnMode] ? this.quickReturnMode : 'pinyin';
+            }
+            return 'direct';
+        }
+
         toggleChineseEnglish() {
             if (this.degrade && this.degrade.active && this.degrade.failedMode) {
                 this.call(() => Native.selectMode(this.degrade.failedMode, this.token));
                 return;
             }
-            const pair = this.quickPair;
-            const target = this.mode === pair[0] ? pair[1] : pair[0];
+            const target = this.quickSwitchTarget();
             // 快捷对里的 strictReady 模式不可用时不出击（codex 评审 P2：
             // 旧 APK 的 hello 不带 stroke 字段，直发 selectMode 只会被
             // 原生拒绝，切换键看起来坏了）。strictReady 与 engine 标志
@@ -3503,6 +3892,148 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
             return button;
         }
 
+        // ---- #H 硬件键盘：hwKey 串行队列 + revision 屏障（design
+        // hardware-keyboard.md §4.1）。物理键由 native 全认领后 evaluate
+        // 注入（window.Feelime.hwKey），全部走软键盘同一批 action。----
+        /** #H 会话换代通知（native onStartInput 驱动，codex 复审 P1-1）：
+         *  编辑器切换的瞬间对齐 gen 并作废在途 hw 动作——不等下一次
+         *  hwKey/hello（间隔期内旧编辑器的两步标点续步会按旧 gen 比较
+         *  成功，把标点补进新编辑器）。 */
+        hwSessionReset(gen) {
+            if (gen !== undefined && gen !== null) this.hwGen = Number(gen) || 0;
+            this.hwQueue.length = 0;
+            this.hwWaitSeq = 0;
+            if (this.pendingPunct && this.pendingPunct.gen !== undefined) {
+                this.pendingPunct = null;
+            }
+        }
+
+        hwEnqueue(kind, value, gen) {
+            // #H 会话代数（codex 评审 P1-1）：native 注入携带 gen——
+            // 新 gen 即新会话，旧队列里的动作在 drain 时按 gen 丢弃。
+            if (gen !== undefined && gen !== null) this.hwGen = gen;
+            const needsState = kind !== 'char';
+            this.hwQueue.push({
+                kind, value, needsState, at: Date.now(), gen: this.hwGen,
+            });
+            this.hwDrain();
+        }
+
+        hwDrain() {
+            if (this.hwDraining) return;
+            const job = this.hwQueue[0];
+            if (!job) return;
+            // #H 跨会话丢弃（codex 评审 P1-1）：job 落队后编辑器换代
+            // （gen 已被新 hwKey/hello 推进）——旧动作不发（native 桥
+            // 终检兜底，这里先拦省一次空往返）。
+            if (job.gen !== undefined && job.gen !== this.hwGen) {
+                if (window.__diagHwStaleGen != null) window.__diagHwStaleGen++;
+                this.hwQueue.shift();
+                return this.hwDrain();
+            }
+            // 两步标点跨步屏障：补发 commitText 完成前，任何后续动作
+            // （含字母——否则字母越过补发落进下一个组合）不发。
+            // 两步标点跨步屏障同样约束超时路径（120ms 不得绕过）。
+            if (this.pendingPunct) { this.hwArmDrainTimer(job); return; }
+            // 状态依赖动作（space/enter/backspace/标点/数字）等命令完成
+            // 水位（design §4.1 六审 B2 终案）。中文 `,`/`.` 虽是 char，
+            // 但 enginePunct 读组合/池（codex 评审 P1-6：不等水位会拿
+            // 旧池确认、或在前一字母回声前误走空闲通道）——同样要等。
+            const stateDep = job.needsState ||
+                (job.kind === 'char' && (job.value === 44 || job.value === 46) &&
+                    this.chineseSymMode());
+            if (stateDep && (this.hwDoneSeq || 0) < (this.hwWaitSeq || 0)) {
+                if (Date.now() - job.at > 120) {
+                    // 超时降级：按当时状态执行 + 诊断（不是完成证明）。
+                    if (window.__diagHwTimeouts != null) window.__diagHwTimeouts++;
+                } else { this.hwArmDrainTimer(job); return; }
+            }
+            this.hwQueue.shift();
+            this.hwDraining = true;
+            try { this.hwRun(job); } finally {
+                this.hwDraining = false;
+            }
+            // 字母等无后续屏障的动作，下一项立即可评估；状态依赖动作
+            // 的回声驱动在 onEngineState 尾部再 hwDrain。
+            this.hwDrain();
+        }
+
+        hwArmDrainTimer(job) {
+            if (this.hwDrainTimer) return;
+            this.hwDrainTimer = setTimeout(() => {
+                this.hwDrainTimer = null;
+                this.hwDrain();
+            }, Math.max(10, 120 - (Date.now() - job.at)));
+        }
+
+        hwRun(job) {
+            if (job.kind === 'space' || job.kind === 'enter' || job.kind === 'backspace') {
+                const seq = ++this.hwSeqCounter;
+                if (job.kind === 'space') this.spaceAction(seq, this.hwGen);
+                else if (job.kind === 'enter') this.enterAction(seq, this.hwGen);
+                else this.backspaceAction(seq, this.hwGen);
+                this.hwWaitSeq = seq;
+                return;
+            }
+            if (job.kind !== 'char') return; // 未知 kind 忽略（防御）
+            const ch = String.fromCodePoint(job.value);
+            // 物理标点（中文模式）：与软键面「，」「。」同路径——组合中
+            // 两步流（enginePunct），空闲 sendText。法/俄/日等非
+            // chineseSymMode 走 Native.key 由各引擎处理。
+            if ((ch === ',' || ch === '.') && this.chineseSymMode()) {
+                // 空闲/两步两分支都发 hw 桥（hwKeyChar/hwChoose），seq
+                // 恒为等待目标；两步流的 choosePoolCandidate 内取 max。
+                const pseq = ++this.hwSeqCounter;
+                this.hwWaitSeq = pseq;
+                this.enginePunct(ch, pseq, this.hwGen);
+                return;
+            }
+            // 其余全部进引擎：物理 case 原样（不走 applyCase/软
+            // Shift/Caps/sticky），`;`'` 编码/分隔键、数字、符号、非
+            // ASCII 同道。走 hwKeyChar 桥（Key 命令带 hw 来源标记，
+            // consumed=false 时 coordinator 原子补交——design §5.3
+            // 五审 B3 终案；旧壳无此桥，存在性回退 Native.key——旧壳
+            // 本就不注入 hwKey，回退只是防御）。
+            const seq = ++this.hwSeqCounter;
+            this.hwWaitSeq = seq;
+            this.call(() => typeof Native.hwKeyChar === 'function'
+                ? Native.hwKeyChar(ch, seq, this.hwGen, this.token)
+                : Native.key(ch, this.token));
+        }
+
+        /** 空格键业务动作（软键面 click 与硬件键盘 hwKey 同一入口，
+         * #H 硬件键盘支持）：手写候选确认 → 组合中按 id 选池头 →
+         * 无组合直发 space。提取自原 click 回调，行为零变化
+         * （软键盘既有 mock 全量回归即证明）。 */
+        spaceAction(hwSeq, hwGen) {
+            // 手写候选在条上时，空格=确认 top1 上屏（issue #28
+            // round-3）：走点选同一通道 commitInkCandidate，联想联动
+            // 与清笔迹行为完全一致；无候选时空格照旧。
+            if (this.mode === 'handwriting' && (this.inkCandidates || []).length) {
+                this.commitInkCandidate(this.inkCandidates[0]);
+                return;
+            }
+            // While composing, space must confirm the TOP candidate —
+            // the displayed pool head (english reorder / favorites inject
+            // ahead of it), not the engine highlight. Choosing by id also
+            // decouples it from paging: on old shells the bar/grid
+            // preloading dragged the native highlight to deep pages
+            // (nihao + preload -> space committed a page-3 word; the same
+            // drag corrupted the #72 stable-seg hint — nihlk frame 5).
+            // New shells page read-only, but the id path stays: it owns
+            // the pool-head product semantics.
+            const ordered = this.englishOrderedPool(this.expandCandidates || []);
+            const candidate = ordered.find(item =>
+                !String(item.id).startsWith('alt:'));
+            if (this.composing && candidate) {
+                this.choosePoolCandidate(candidate, hwSeq, hwGen);
+                return;
+            }
+            this.call(() => hwSeq && typeof Native.hwSpace === 'function'
+                ? Native.hwSpace(hwSeq, hwGen, this.token)
+                : Native.space(this.token));
+        }
+
         spaceKey() {
             // The space key shows only a mic
             // glyph - the active mode's shorthand lives on the toggle key.
@@ -3532,28 +4063,7 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
                 label.textContent = this.spaceHoldText;
                 button.append(label);
             }
-            button.addEventListener('click', () => {
-                // 手写候选在条上时，空格=确认 top1 上屏（issue #28
-                // round-3）：走点选同一通道 commitInkCandidate，联想联动
-                // 与清笔迹行为完全一致；无候选时空格照旧。
-                if (this.mode === 'handwriting' && (this.inkCandidates || []).length) {
-                    this.commitInkCandidate(this.inkCandidates[0]);
-                    return;
-                }
-                // While composing, space must confirm the TOP
-                // candidate. Native space confirms the highlight, which sits
-                // on whatever page the bar/grid preloading dragged the cursor
-                // to (nihao + preload -> space committed a page-3 word).
-                // Choosing the pool head by id decouples it from paging.
-                const ordered = this.englishOrderedPool(this.expandCandidates || []);
-                const candidate = ordered.find(item =>
-                    !String(item.id).startsWith('alt:'));
-                if (this.composing && candidate) {
-                    this.choosePoolCandidate(candidate);
-                    return;
-                }
-                this.call(() => Native.space(this.token));
-            });
+            button.addEventListener('click', () => this.spaceAction());
             this.bindSpaceHold(button);
             this.bindTouch(button, { skipClick: true });
             return button;
@@ -3817,6 +4327,11 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
                 press = { x: touch.clientX, y: touch.clientY,
                     id: touch.identifier, button };
                 this.pressById.set(press.id, press);
+                // 新按压代际（allUp 治理注入的执行时守卫用）：audit
+                // 查询到 cancelTouchesEpochGuard 落地之间若有新按下，
+                // 代际前进，清理放弃（codex review P1：renderer 异步
+                // 落地窗口）。
+                this.touchEpoch += 1;
                 this.traceTouch('press-start/' + press.id, event);
                 // 同 id 的新按下是新会话：撤销标记不跨会话。
                 this.popupRetiredIds.delete(press.id);
@@ -4278,22 +4793,32 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
                     this.delRetry = false;
                     this.call(() => Native.backspaceGestureEnd(this.token));
                 }
-                // #34 垂直手势在松手派发（方向已在跨越时锁定）。上=全选
-                // 删：独立桥 clearEditorText（先作废词撤销再全选再 DEL——
-                // 复用普通 backspace 会踩法/俄「退格重开上一词」，codex
-                // 评审 P1-3）；旧壳无该桥回落 selectAll+backspace。
-                // 下=Ctrl+Z。
+                // #34 垂直手势在松手派发（方向已在跨越时锁定）。上=删光
+                // 标前全部（#85 改通道：原 selectAll+DEL 连光标后内容一起
+                // 清，光标在中间时误伤；独立桥 deleteBeforeCursor 按 IC
+                // 字符数删，词撤销照旧作废）——旧壳回落 clearEditorText
+                // 全选删，再旧回落 selectAll+backspace（法/俄「退格重开
+                // 上一词」的 P1-3 教训仍在回退链注释里）。下=Ctrl+Z。
                 if (!cancelled && origin && this.bsVertical) {
                     if (this.bsVertical < 0) {
-                        if (typeof Native.clearEditorText === 'function') {
+                        if (typeof Native.deleteBeforeCursor === 'function') {
+                            this.call(() => Native.deleteBeforeCursor(this.token));
+                        } else if (typeof Native.clearEditorText === 'function') {
                             this.call(() => Native.clearEditorText(this.token));
                         } else {
                             this.call(() => Native.editorAction('selectAll', this.token));
                             this.call(() => Native.backspace(this.token));
                         }
                     } else {
-                        this.call(() => Native.keyEvent(BS_UNDO_KEYCODE,
-                            CTRL_META_BITS.Ctrl, this.token));
+                        // 下滑恢复（验收 2026-11-05）：优先原生快照恢复
+                        // （写回被删内容、光标回删除前位置、无选中态）；
+                        // 旧壳/无快照回落宿主 Ctrl+Z（恢复会带选中）。
+                        if (typeof Native.undoDeleteBeforeCursor === 'function') {
+                            this.call(() => Native.undoDeleteBeforeCursor(this.token));
+                        } else {
+                            this.call(() => Native.keyEvent(BS_UNDO_KEYCODE,
+                                CTRL_META_BITS.Ctrl, this.token));
+                        }
                     }
                 }
                 this.bsVertical = 0;
@@ -4965,8 +5490,26 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
                 this.renderCandidates(this.lastEngineState || {});
                 return;
             }
-            if (this.caps) this.caps = false;
-            else this.shift = !this.shift;
+            // #63 双击锁定（升级式，单击不等待）：第一击已即时生效为
+            // 单次大写，300ms 内第二击仍落 Shift 则升级为锁定——语义
+            // 兼容（单击本就预期大写后回落，锁定只是替换该预期）。
+            // 长按 gate（holdMs≥200ms）与滑动各自抑制 click，不会误触。
+            const tappedAt = Date.now();
+            if (this.doubleShiftLock
+                && tappedAt - this.lastShiftTapAt <= 300) {
+                this.lastShiftTapAt = -Infinity;
+                this.lockShift();
+                return;
+            }
+            this.lastShiftTapAt = tappedAt;
+            if (this.caps) {
+                this.caps = false;
+                // 解锁击断双击链：连点四下是「锁定-解锁-再切」，不该
+                // 在解锁后的 300ms 内又立刻锁回去。
+                this.lastShiftTapAt = -Infinity;
+            } else {
+                this.shift = !this.shift;
+            }
             this.updateLabels();
         }
 
@@ -5027,6 +5570,9 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
                 shift.querySelector('svg path').setAttribute('d', this.caps ? ICON_PATHS.caps : ICON_PATHS.shift);
             }
             this.updateToggleLabels();
+            // #87：候选条形态的快捷切换键与软键盘 modeToggle 同步刷新，
+            // 不依赖形态切换（applyHwForm 早退会漏掉纯模式切换）。
+            this.updateHwModeTag();
             this.updateEnterLabel();
             // An armed Fn relabels the twelve F-keys last.
             this.renderFnLabels();
@@ -5038,8 +5584,7 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
             // The small label previews the target from the saved pair.
             const toggle = document.getElementById('modeToggle');
             if (!toggle) return;
-            const pair = this.quickPair;
-            const target = this.mode === pair[0] ? pair[1] : pair[0];
+            const target = this.quickSwitchTarget();
             toggle.querySelector('.cn-main').textContent =
                 modeLabel(this.mode);
             toggle.querySelector('.cn-sub').textContent =
@@ -5053,12 +5598,8 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
                 enter.textContent = label;
                 enter.setAttribute('aria-label', label);
             }
-            // Symbol layer row 4 carries its own enter key .
-            const symEnter = document.getElementById('symEnterKey');
-            if (symEnter) {
-                symEnter.textContent = label;
-                symEnter.setAttribute('aria-label', label);
-            }
+            // Symbol layer row 4 no longer carries an enter key — the ⌫
+            // took its slot (2026-10-28); the nine-pad keeps its own.
             // So does the nine-pad's action column.
             const numEnter = document.getElementById('numEnterKey');
             if (numEnter) {
@@ -5114,6 +5655,7 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
                 name === 'symbols' ? 'symbolLayer'
                     : name === 'numpad' ? 'numPadLayer' : 'qwertyLayer',
             ).hidden = false;
+            this.hwNotifyPanelHeight(); // #H 层还原=高度态重算
         }
 
         hideKeyLayers() {
@@ -5886,6 +6428,8 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
                 this.showNumpad();
             }
             else if (target === 'custom') this.showCustomTab();
+            // #67：颜文字面板 tab（工具栏按钮/长按空格动作同入口）。
+            else if (target === 'kaomoji') this.openPanel('kaomoji');
         }
 
         /** 直达符号面板的「定制」tab（#39-12 工具栏按钮的直达逻辑，
@@ -6045,34 +6589,50 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
             this.customChainActive = false;
             this.pumpCustomChain();
         }
-        symbolCategoryValues() {
-            // 中/En paired tables (常用/引号) pick rows by variant.
+        symbolCategoryRows() {
+            // 整表拉平、按 10 列重排（2026-10-28 用户反馈：按 authored
+            // 行渲染时短行尾留缺位格，每隔几行一个洞）。所有表的总量
+            // 都凑成 10 的倍数，拉平后没有空位；分类条 ⌫ 顶替换行键位
+            // 后网格不再需要预留删除格。
+            let values;
             if (VARIANT_TABLES[this.symbolCat]) {
-                return this.rowsFor(this.symbolCat).flat();
-            }
-            if (this.symbolCat === 'recent') {
-                const values = this.recent();
+                values = this.rowsFor(this.symbolCat).flat();
+            } else if (this.symbolCat === 'recent') {
+                values = this.recent();
                 // Fill the remainder from the common set so the grid always
                 // shows full, evenly spaced rows (style fix).
                 for (const row of this.commonRows()) {
                     for (const value of row) {
-                        if (values.length >= 29) break;
+                        if (values.length >= 30) break;
                         if (!values.includes(value)) values.push(value);
                     }
                 }
-                return values;
+            } else {
+                const category = SYMBOL_CATEGORIES.find(c => c.id === this.symbolCat) || SYMBOL_CATEGORIES[0];
+                values = category.rows.flat();
             }
-            const category = SYMBOL_CATEGORIES.find(c => c.id === this.symbolCat) || SYMBOL_CATEGORIES[0];
-            // Pad every row to the full 10 cells: flattening short rows first
-            // shifted the grid left and split pairs like ( ) across rows
- // .
-            const values = [];
-            category.rows.forEach(row => {
-                const padded = [...row];
-                while (padded.length < 10) padded.push('');
-                values.push(...padded);
+            const rows = [];
+            for (let i = 0; i < values.length; i += 10) rows.push(values.slice(i, i + 10));
+            return rows;
+        }
+
+        /** 通用符号格：click-only，绝不 bindTouch——bindTouch 的
+         * touchstart preventDefault 会杀 #symGrid 的竖向原生滚动
+         * （.ink-scroll/.num-syms/.sym-custom-row 同批教训），pan-y 由
+         * CSS 在 .sym-grid-inner .kb-key 上重申。触感放 click 时点：
+         * 从格上起手拖动滚动不该震（inkSymbolCell 同口径）。 */
+        symCell(value, opts = {}) {
+            const button = document.createElement('button');
+            button.className = 'kb-key ' + (value.length > 1 ? 'sym-multi' : 'sym-single');
+            button.textContent = value;
+            button.setAttribute('aria-label', value);
+            button.addEventListener('click', () => {
+                this.nativeKeyFeedback();
+                this.sendSymbol(value);
+                this.remember(value);
+                if (opts.rerender) this.renderSymbols();
             });
-            return values;
+            return button;
         }
 
         renderSymbols() {
@@ -6174,14 +6734,14 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
             grid.replaceChildren();
             if (this.symbolCat === 'arrows') {
                 // The 方向 category commits directional TEXT (design §2.4):
-                // the glyphs land literally and ⇥ commits a real tab
-                // character - no key events, no repeat. Directional glyphs
-                // do land in 最近 (issue #48); the tab commit stays out.
+                // the glyphs land literally - no key events, no repeat, no
+                // \t 格（2026-10-28 用户定案移除）。Directional glyphs
+                // do land in 最近 (issue #48).
                 // Rows live in a top-aligned wrap: two rows spread across
                 // the three-row slot would read as a hole in the middle.
                 const arrowsRows = [
                     [['←'], ['↑'], ['→'], ['↓'], ['↔'], ['↕'], ['↖'], ['↗'], ['↘'], ['↙']],
-                    [['⇥', '\t']],
+                    [['⇦'], ['⇨'], ['⇧'], ['⇩'], ['↩'], ['↪'], ['↰'], ['↱'], ['↲'], ['↳']],
                 ];
                 const wrap = document.createElement('div');
                 wrap.className = 'sym-arrows';
@@ -6203,48 +6763,38 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
                     }
                     wrap.append(row);
                 });
-                // 行 3 末位固定 ⌫（keyboard.md §155）：分类再特殊，
-                // 删自己刚输入的字符不该先切层。
-                const lastRow = this.row();
-                for (let i = 0; i < 9; i++) {
-                    const blank = document.createElement('span');
-                    blank.className = 'sym-blank';
-                    lastRow.append(blank);
-                }
-                lastRow.append(this.specialKey('backspace', ICONS.backspace,
-                    () => this.backspaceAction(),
-                    'kb-special', 'repeat'));
-                wrap.append(lastRow);
                 grid.append(wrap);
                 return;
             }
-            const values = this.symbolCategoryValues();
-            while (values.length < 29) values.push('');
-            for (let r = 0; r < 3; r++) {
+            // 通用分类：行数不设限（数据表有多少行渲多少行），装进
+            // .sym-grid-inner 交给 CSS 竖向滚动（≤3 行时 space-between
+            // 分布与旧版逐像素一致）。网格不再携带 ⌫——它顶替了分类
+            // 条右端的换行键（2026-10-28 用户定案）。
+            const inner = document.createElement('div');
+            inner.className = 'sym-grid-inner';
+            this.symbolCategoryRows().forEach(values => {
                 const row = this.row();
-                const slice = values.slice(r * 10, r * 10 + 10);
-                if (r === 2) slice.length = 9; // last cell of row 3 is backspace
-                slice.forEach(value => {
+                const cells = [...values];
+                while (cells.length < 10) cells.push('');
+                cells.forEach(value => {
                     if (value === '') {
                         const blank = document.createElement('span');
                         blank.className = 'sym-blank';
                         row.append(blank);
                         return;
                     }
-                    const button = this.functionKey(value, () => {
-                        this.sendSymbol(value);
-                        this.remember(value);
-                        if (this.symbolCat === 'recent') this.renderSymbols();
-                    }, value.length > 1 ? 'sym-multi' : 'sym-single');
-                    row.append(button);
+                    row.append(this.symCell(value, { rerender: this.symbolCat === 'recent' }));
                 });
-                if (r === 2) {
-                    row.append(this.specialKey('backspace', ICONS.backspace,
-                        () => this.backspaceAction(),
-                        'kb-special', 'repeat'));
-                }
-                grid.append(row);
-            }
+                inner.append(row);
+            });
+            grid.append(inner);
+            // 切分类一律回顶（2026-10-28 用户定案：不记住上次拖到哪）。
+            // 显式归零——scroll anchoring/内容重建可能保留旧 offset。
+            grid.scrollTop = 0;
+            // 可滚才挂渐隐 mask（底部 8px 提示还有更多行）；mock 无布局
+            // （两高均为 0）自动跳过，fitCustomRow 同守卫。
+            grid.classList.toggle('sym-scrollable',
+                grid.scrollHeight > grid.clientHeight);
         }
 
         /* ===== control-key layer  ===== */
@@ -6269,6 +6819,7 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
             if (on && document.body.classList.contains('editing')) return;
             this.ctrlView = on;
             this.ctrlSuspended = false;
+            this.hwNotifyPanelHeight(); // #H 控制行=候选条预算+行高
             document.body.classList.toggle('ctrl-view', on);
             document.getElementById('ctrlLayer').hidden = !on;
             document.getElementById('candidateBar').hidden = on;
@@ -6574,6 +7125,69 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
             this.syncOverlay();
         }
 
+        /* ===== #H 硬键盘候选条形态（design hardware-keyboard.md §5）=====
+         * body.hwkb = hardwareKeyboard（hello 字段）&& 档位==candidates &&
+         * mode∈引擎文本模式。手写/T9/笔画/direct 即使硬键盘在也显示完整
+         * 键盘（笔迹区/九键/英文键帽必须可见）。档位存 native pref
+         * （feelime_hwkb_form），随 hello 的 hwkbForm 字段下发。
+         * 高度由 native 的 contentHeightPx 收缩——CSS 只隐藏键区。 */
+        applyHwForm() {
+            const active = !!this.hardwareKeyboard &&
+                (this.hwkbForm || 'candidates') === 'candidates' &&
+                HW_TEXT_MODES.has(this.mode);
+            if (document.body.classList.contains('hwkb') === active) return;
+            document.body.classList.toggle('hwkb', active);
+            this.applyHeight();
+            this.hwNotifyPanelHeight();
+            this.updateHwModeTag();
+        }
+
+        /* ===== #H 面板高度态（design §7，codex 评审 P1-9）=====
+         * 候选条形态下面板/控制层/语音遮罩开关时通知 native 换窗口高度：
+         * candidates=候选条预算、ctrl=控制行预算、full=完整键盘高度。
+         * 状态取自标志位（时序无关 DOM），native 侧只在 hwkb 形态
+         * 分支消费该值，其余形态自然忽略。 */
+        /** #H 候选条形态快捷切换键（#87 顺带优化）：modeToggle 的紧凑
+         *  形态——cn-main=当前模式简称、cn-sub=快捷对目标简称（看清「在
+         *  哪」与「下一站是谁」，比单行两字全名更可辨）；点按翻对、长按
+         *  完整模式菜单（软键盘切换键同交互）。
+         *
+         *  #87 定案：标签刷新不得挂在 applyHwForm 的形态早退下——形态
+         *  未变的纯模式切换（如 双拼→形码）会被短路滞留旧名（用户实录
+         *  + AVD 复现）。现挂三处确定性刷新：updateLabels / hello（
+         *  adoptQuickPair 之后）/ 引擎态模式变更分支。显隐由这里管
+         *  （CSS [hidden] 兜底），非文本模式随形态隐藏。 */
+        updateHwModeTag() {
+            const el = document.getElementById('hwModeTag');
+            if (!el) return;
+            const active = document.body.classList.contains('hwkb') && HW_TEXT_MODES.has(this.mode);
+            el.hidden = !active;
+            if (!active) return;
+            el.querySelector('.cn-main').textContent = modeLabel(this.mode);
+            el.querySelector('.cn-sub').textContent = modeLabel(this.quickSwitchTarget());
+        }
+
+        hwPanelHeightState() {
+            if (['listening', 'loading', 'stopping'].includes(this.voiceState)) return 'full';
+            // 数字/符号/Emoji 层（工具栏可达入口，codex 复审 P1-9：不
+            // 纳入 full 会落到被 CSS 藏掉的短视图）与编辑条同判。
+            if (this.panelOpen || this.expanded || this.keyLayer === 'numpad' ||
+                this.keyLayer === 'symbols' ||
+                document.body.classList.contains('editing') || this.toolbarEdit ||
+                this.keyLayer === 'settings' || this.keyLayer === 'stats' ||
+                this.keyLayer === 'edit') return 'full';
+            if (this.ctrlView) return 'ctrl';
+            return 'candidates';
+        }
+
+        hwNotifyPanelHeight() {
+            if (typeof Native.hwPanelHeight !== 'function') return;
+            const state = this.hwPanelHeightState();
+            if (state === this.hwPanelHeightSent) return;
+            this.hwPanelHeightSent = state;
+            this.call(() => Native.hwPanelHeight(state, this.token));
+        }
+
         /* ===== orientation & keyboard height  ===== */
 
         applyOrientation(landscape) {
@@ -6647,6 +7261,48 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
             document.body.style.setProperty('--cand-font-scale', String(clamped / 100));
         }
 
+        // 键帽字号（issue #70）：50-150 连续百分比直写 --keycap-font-scale，
+        // 只缩放键面文字，行高/触摸区预算不动；与角标的碰撞由 CSS min()
+        // 静态钳制（见 .kb-main/.t9-group），缩小侧无碰撞风险。
+        applyKeycapFont() {
+            const pct = Number(this.keycapFont);
+            const clamped = Number.isFinite(pct) ? Math.min(150, Math.max(50, pct)) : 100;
+            document.body.dataset.keycapFont = clamped === 100 ? 'normal' : 'scaled';
+            document.body.style.setProperty('--keycap-font-scale', String(clamped / 100));
+        }
+
+        // 用户字体（issue #70）：digest 非空时挂同源 face.css（@font-face
+        // 定义在里面，CSP style-src 'self' 不允许内联）并切 --kb-font；
+        // digest 空 = 移除。digest 不变不重挂（重导字体换 digest，URL 随
+        // 之换，绕开 WebView 缓存钉死）。
+        applyUserFont(digest) {
+            digest = String(digest || '');
+            if (digest === this.userFontDigest && this.userFontLink_) return;
+            this.userFontDigest = digest;
+            if (this.userFontLink_ && this.userFontLink_.parentNode) {
+                this.userFontLink_.remove();
+            }
+            this.userFontLink_ = null;
+            if (!digest) {
+                document.body.style.setProperty('--kb-font', 'system-ui');
+                return;
+            }
+            const link = document.createElement('link');
+            link.rel = 'stylesheet';
+            link.href = '/keyboard/fonts/' + encodeURIComponent(digest) + '/face.css';
+            // face.css 404（字体被清/换机未导入）：@font-face 没生效就先别
+            // 切栈，免得键盘闪一帧回退字。坏字体平台 Typeface 终验已挡。
+            link.onerror = () => {
+                if (this.userFontLink_ === link) {
+                    document.body.style.setProperty('--kb-font', 'system-ui');
+                }
+            };
+            this.userFontLink_ = link;
+            // head 缺失时退到 documentElement（测试 harness 的最小 DOM 没有 head）。
+            (document.head || document.documentElement).appendChild(link);
+            document.body.style.setProperty('--kb-font', '"FeelimeUser"');
+        }
+
         // 拼音字号（issue #8）：悬浮带回 1.0.13 的顶部形态，档位驱动
         // --preedit-font-scale（字号）与 --preedit-band-scale（带高 +
         // 顶部 padding/横屏 bar margin，随档位让位）。带高变化改写行高
@@ -6713,7 +7369,8 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
                 // 该组无图必须清掉残留——不清会把另一组的图带到当前
                 // 主题（真机：暗色主题铺着亮色组的老图）。
                 layer.style.backgroundImage =
-                    image ? `url("data:image/jpeg;base64,${image}")` : '';
+                    image ? `url("${image.startsWith('/keyboard/background/') || image.startsWith('https://feelime.local/keyboard/background/')
+                        ? image : 'data:image/jpeg;base64,' + image}")` : '';
             }
             document.body.dataset.bgImage = image ? 'on' : 'off';
             this.pushChromeColor();
@@ -6857,6 +7514,7 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
             };
             this.toolbarEdit = true;
             document.body.classList.add('toolbar-edit');
+            this.hwNotifyPanelHeight(); // #H 工具栏编辑=完整高度（图标仓库）
             editor.hidden = false;
             this.renderToolbarEditor();
             this.showToast(t("工具栏编辑：点下方图标添加，拖动排序，× 移除"));
@@ -6880,6 +7538,7 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
             if (!this.toolbarEdit) return;
             this.toolbarEdit = false;
             document.body.classList.remove('toolbar-edit');
+            this.hwNotifyPanelHeight(); // #H 退出回落
             const editor = document.getElementById('toolbarEditor');
             if (editor) editor.hidden = true;
             this._toolbarSnapshot = null;
@@ -6950,6 +7609,7 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
                 { key: 'emoji', id: 'toolEmoji', icon: 'smiley', label: 'Emoji' },
                 { key: 'edit', id: 'editTool', icon: 'edit', label: '编辑工具' },
                 { key: 'custom', id: 'toolCustom', icon: 'custom', label: '定制按键' },
+                { key: 'kaomoji', id: 'toolKaomoji', icon: 'kaomoji', label: '颜文字' },
             ];
             const pool = document.getElementById('toolbarEditorGrid');
             defs.forEach(({ key, id, icon, label }) => {
@@ -6999,6 +7659,12 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
                             return;
                         }
                         this.showCustomTab();
+                        return;
+                    }
+                    // #67 颜文字：面板 tab 直达 + toggle（开着再点回键盘）。
+                    if (key === 'kaomoji') {
+                        if (this.panelOpen && this.panelTab === 'kaomoji') this.closePanel();
+                        else this.openPanel('kaomoji');
                         return;
                     }
                     this.toggleExtraTool(key);
@@ -7630,6 +8296,11 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
                 // 持久化走 native（applyKbHeight → setKeyboardHeight →
                 // pref，debounce 落盘）；重置=0 走 native 的清键语义。
                 this.applyKbHeight(this.heightResetPending ? 0 : content, true);
+                // codex 终审 MAJOR：hello 的 storedKbHeight 快照不会因保存
+                // 自动刷新——不同步的话，后续 applyModeHeight 按旧快照
+                // transient 回推，把刚保存的运行时高度压回旧值（探针实录
+                // 保存 276 → 回推 272）。重置=清 pref，快照归零。
+                this.nativeStoredHeightCss = this.heightResetPending ? 0 : content;
                 // 「已保存」只在 native commit 回执后出现（onHeightSaved）。
                 // 兜底按能力分流（codex 二轮 P2-5）：新壳（height-ack-v1）
                 // 超时如实提示未确认、不谎报成功；旧壳无回执能力，800ms
@@ -7693,8 +8364,12 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
             menu.style.maxHeight = 'none'; // measure the natural height first
             // 锚点 = 调用方传入的触发键（round-4：手写竖屏键面没有
             // #modeToggle 了，菜单必须能锚在任意触发键上），缺省仍是
-            // 中英切换键。
-            const anchorEl = anchor || document.getElementById('modeToggle');
+            // 中英切换键；候选条形态（#87）下菜单由工具栏的快捷切换键
+            // 触发，锚它。
+            const anchorEl = anchor ||
+                (document.body.classList.contains('hwkb') &&
+                    document.getElementById('hwModeTag')) ||
+                document.getElementById('modeToggle');
             if (!anchorEl) return;
             this.modeMenuAnchor = anchorEl;
             const toggle = anchorEl.getBoundingClientRect();
@@ -7762,6 +8437,7 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
             // 而不是进数字键盘）。
             this.keyLayer = 'settings';
             this.hideKeyLayers();
+            this.hwNotifyPanelHeight(); // #H 快捷设置=完整高度
         }
 
         closeSettingsPanel() {
@@ -7782,6 +8458,7 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
             // The panel borrowed the bar from the ctrl view -
             // bring the rows back if the switch is still on.
             this.maybeResumeCtrlView();
+            this.hwNotifyPanelHeight(); // #H 收起回落
         }
 
         /* ===== #39-10 编辑工具条（可选工具栏控件，搜狗「文字编辑」
@@ -7803,6 +8480,7 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
             // 工具栏换成标题+✕（body.stats-page 互斥：常规工具/候选条
             // 全让位，面板之外不可能再叠别的界面——用户验收实录）。
             document.body.classList.add('stats-page');
+            this.hwNotifyPanelHeight(); // #H 统计面板=完整高度
         }
 
         closeStatsPanel() {
@@ -7977,6 +8655,7 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
             this.keyLayer = 'edit';
             this.hideKeyLayers();
             layer.hidden = false;
+            this.hwNotifyPanelHeight(); // #H 编辑面板=完整高度
         }
 
         closeEditPanel() {
@@ -8568,6 +9247,7 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
             this.closeSettingsPanel();
             this.showKeyLayer('letters');
             document.body.classList.add('editing');
+            this.hwNotifyPanelHeight(); // #H 编辑条接管后重算（前面的 letters 报过 candidates）
             editor.hidden = false;
             area.focus();
             this.setPanelInput(true);
@@ -8704,6 +9384,7 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
 
         setExpanded(expanded) {
             this.expanded = expanded;
+            this.hwNotifyPanelHeight(); // #H 展开候选=完整高度
             document.body.classList.toggle('expanded', expanded);
             document.getElementById('expandLayer').hidden = !expanded;
             if (expanded) {
@@ -8754,7 +9435,7 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
             // 重置与 DOM 清空）。
             if (this.symbolicPrefixChanged) {
                 this.symbolicPrefixChanged = false;
-                this.renderExpanded();
+                if (this.expanded) this.renderExpanded();
             }
         }
 
@@ -8783,24 +9464,71 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
                 !String(candidate.id).startsWith('fav:') &&
                 !String(candidate.id).startsWith('dyn:') &&
                 !String(candidate.id).startsWith('alt:'));
-            // 符号词条重排（issue #17）先于 overlay 组装：custom_phrase 通道
-            // 的符号/emoji 词在引擎侧受 initial_quality 的 0/1 悬崖支配（第
-            // 1 位或沉底，weight 无法跨流微调），在 ENGINE 池内把纯符号词
-            // 挪到 index 2（两个正常候选保持在最前）。先排引擎序、后插
-            // overlay，常用语 rank 位次与空格确认的池头语义不被符号挪动
-            // 二次改写；中文自定义词（含汉字/字母）不动。bar/展开层/选词
-            // 通道共用同一池，天然一致。
+            // 符号词条重排（issue #17 → #81）先于 overlay 组装：custom_phrase
+            // 通道的符号/emoji 词在引擎侧受 initial_quality 的 0/1 悬崖支配
+            // （第 1 位或沉底，weight 无法跨流微调，且不入 userdb——引擎不
+            // 学习），位次完全由这里定。#81 三层：
+            //  ① 显式 rank（hello.symbolRanks，1-9，手管表单或导入表第三
+            //     列）永远优先——从池内取出，池组装后按 rank splice 到
+            //     第 N 可见位（与常用语 exact rank 同语义）；
+            //  ② 未指定 rank 的默认钉 index 2（#17 折中：不抢正常候选的
+            //     前两格，避免影响正常输入）；
+            //  ③ 「基于词频排序」开关（默认关）开时，未指定的按键盘侧
+            //     使用计数分层——≥SYMBOL_PROMOTE_AT 的按计数序升到池头
+            //     （空格直选），组内按计数降序稳定排；关时保持引擎序。
+            // 先排引擎序、后插 overlay，常用语 rank 位次与空格确认的池头
+            // 语义不被二次改写；中文自定义词（含汉字/字母）不动。bar/展
+            // 开层/选词通道共用同一池。
+            const ranks = this.symbolRanks || {};
+            const freqOn = this.symbolFreqSort === true;
             const symbolic = rawEngine.filter(candidate => isSymbolicText(candidate.text));
             let engine = rawEngine;
             if (symbolic.length) {
-                const rest = rawEngine.filter(candidate => !symbolic.includes(candidate));
-                engine = [...rest.slice(0, 2), ...symbolic, ...rest.slice(2)];
+                const slotted = candidate => {
+                    const rank = Number(ranks[candidate.text]);
+                    return Number.isInteger(rank) && rank >= 1 && rank <= 9;
+                };
+                const auto = symbolic.filter(candidate => !slotted(candidate));
+                // 钉位符号（显式 rank）放池尾——位次由 englishOrderedPool
+                // （显示序裁决层）统一回插，避免「rank splice 落原始池、
+                // 英文重排又插队挤位」的二次改写（AVD probe 定罪：rank=3
+                // 的 ⊙ 显示在 index 1）。放尾而非引擎原位：原位会占用下方
+                // slice(0,2) 的「前两格保留」名额，钉位符号被抽走后名额
+                // 落到未指定符号头上，未指定的 ★ 反而顶到首位（codex
+                // review P2-2 Node 复现）。
+                const pinnedSyms = symbolic.filter(candidate => slotted(candidate));
+                let autos = auto;
+                if (freqOn && auto.length) {
+                    const counts = readSymbolUseCounts();
+                    autos = auto
+                        .map((candidate, index) => ({ candidate, index, uses: counts[candidate.text] || 0 }))
+                        .sort((a, b) => b.uses - a.uses || a.index - b.index)
+                        .map(entry => entry.candidate);
+                }
+                // 排除全部符号（含钉位——钉位只在尾部 pinnedSyms 出现一次，
+                // filter 只排 auto 会让钉位符号在 restAll 与尾部各一份）。
+                const restAll = rawEngine.filter(candidate => !symbolic.includes(candidate));
+                if (freqOn) {
+                    const counts = readSymbolUseCounts();
+                    const promoted = autos.filter(candidate => (counts[candidate.text] || 0) >= SYMBOL_PROMOTE_AT);
+                    const plain = autos.filter(candidate => (counts[candidate.text] || 0) < SYMBOL_PROMOTE_AT);
+                    engine = [...promoted, ...restAll.slice(0, 2), ...plain, ...restAll.slice(2), ...pinnedSyms];
+                } else {
+                    engine = [...restAll.slice(0, 2), ...autos, ...restAll.slice(2), ...pinnedSyms];
+                }
             }
             // 笔画句子候选压后（issue #18）：词典 max_phrase_length=1，
             // 多字候选必来自 enable_sentence 造句（☯；comment 不在桥协议
-            // 里，按字长识别）。不压后的话 h'z 的句子「一乙」会顶掉首字
-            // 候选，空格确认整段上屏（probe 实测首格被句子占据）。
-            if (this.mode === 'stroke') {
+            // 里，按字长识别）。不压后的话 hspp 长码兜底的句子「才丿」
+            // 会顶掉首字候选，空格确认整段上屏（probe 实测首格被句子占）。
+            // 例外（2026-10-27 笔画分词报障）：raw 回声带显式分词符 ' =
+            // 用户明确要求按整句组词，引擎已把整句排首位（你的笔画'
+            // 好的笔画 → 你好[0,14) 居首），再压后会被各长度前缀字
+            // （你/化/仍/仇/仉/亻/丿）挤到第 8 位、空格确认到错误候选。
+            // 此时保留引擎顺序。preedit 由 sentence 格式化插入的空格不
+            // 是分词符，lastRawInput 含 ' 才算显式分词。
+            if (this.mode === 'stroke'
+                && !(this.lastRawInput || '').includes("'")) {
                 const sentences = engine.filter(candidate =>
                     [...candidate.text].length > 1);
                 if (sentences.length) {
@@ -8875,22 +9603,15 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
                     prevIndex = at;
                 });
             this.expandCandidates = pool;
-            // 池前缀 id 签名变了 → 展开区增量水位线与新顺序错位（会漏项/
-            // 重复），标记让 accumulateCandidates 全量重绘。签名必须覆盖
-            // 「已渲染」的整段前缀（取 max(expandRendered, 3)）——句子压后
-            // 发生在池中部时只看前 3 项发现不了（codex 评审 P1 复现：翻页
-            // 后「二」漏绘、「才丿」重复）；纯追加不动已有顺序时不触发，
-            // 保留拖动预载的增量渲染。签名按最终展示序（英文位置重排后）
-            // 计算：重排改写展示前缀时同样必须触发全量重绘（codex R2-P1
-            // 复现：追加页带来英文，候选条第 1 位是英文、展开区却漏英文
-            // 重复中文——旧签名读原始引擎序，感知不到重排变化）。
-            const ordered = this.englishOrderedPool(pool);
-            const prefixSig = ordered.slice(0, Math.max(this.expandRendered, 3))
-                .map(candidate => candidate.id).join('|');
-            if (prefixSig !== this.symbolicPrefixSig) {
-                this.symbolicPrefixSig = prefixSig;
-                this.symbolicPrefixChanged = true;
-            }
+            // 比较同一段已有前缀，不能拿上一页的短签名与本页长签名
+            // 比较；追加本身不应触发重绘。展开区关闭时留到打开再建节点。
+            const signatures = this.englishOrderedPool(pool)
+                .map(candidate => candidate.id + '\0' + candidate.text);
+            const previous = this.symbolicPrefixIds || [];
+            this.symbolicPrefixChanged = previous.length > signatures.length ||
+                previous.slice(0, Math.max(this.expandRendered || 0, 3))
+                    .some((signature, i) => signature !== signatures[i]);
+            this.symbolicPrefixIds = signatures;
         }
 
         /** Single pick funnel for pool entries: engine ids ride the engine
@@ -8899,7 +9620,7 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
          * accent variants swap the first character and KEEP the
          * composition alive - pick é on "ete" and it becomes "éte",
          * still composing (iOS-style, via the atomic setComposition). */
-        choosePoolCandidate(candidate) {
+        choosePoolCandidate(candidate, hwSeq, hwGen) {
             // 法语大小写循环：变形提交绕过引擎 Choose（引擎提交原词+空格，
             // 替换不了文本）；clearComposing + commitText 同 dyn:/fav: 通道，
             // 尾空格与引擎 Choose 的提交形态一致。
@@ -8927,7 +9648,28 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
                 this.switchToVariant(candidate.text + raw.slice(1));
                 return;
             }
-            this.call(revision => Native.chooseCandidate(revision, candidate.id, this.token));
+            // hw 路径：seq 随 hwChoose 发出即成为水位等待目标（标点
+            // 两步流经此进入；space/enter 的直发桥在 hwRun 统一设）。
+            if (hwSeq) this.hwWaitSeq = Math.max(this.hwWaitSeq || 0, hwSeq);
+            // #81 符号词使用计数：引擎不学习 custom_phrase 词条，键盘侧
+            // 记次数供 injectFavoriteCandidates 分层排序。候选条点击/展开
+            // 格/空格（软+硬）都汇到这条通道；计数放在 call 回调内——
+            // 门闸拒绝（未 hello/token 失效）时不把失败的选择记成使用。
+            // 边界（review P2）：物理数字键选词走 hwKeyChar 数字通道，
+            // 不经这里，暂不参与学习。
+            const bumpSymbol = candidate && isSymbolicText(candidate.text)
+                ? (() => {
+                    const counts = readSymbolUseCounts();
+                    counts[candidate.text] = (counts[candidate.text] || 0) + 1;
+                    writeSymbolUseCounts(counts);
+                })
+                : null;
+            this.call(revision => {
+                if (bumpSymbol) bumpSymbol();
+                return (hwSeq && typeof Native.hwChoose === 'function')
+                    ? Native.hwChoose(hwSeq, hwGen, revision, candidate.id, this.token)
+                    : Native.chooseCandidate(revision, candidate.id, this.token);
+            });
         }
 
         /** Fresh composition: the filter tab returns to 词频 (word freq). */
@@ -9190,14 +9932,14 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
          * screen drives the shared native cursor. */
         maybeLoadMoreCandidates() {
             if (!this.expandHasNext || this.loadingMore) return;
-            // 笔画组合中不追页（三个调用点统一在这拦）：候选池本来就只有
-            // 几条（completion 单字 + 压后的句子候选），条永远不满，
-            // 「拉到溢出为止」会在组合中每键自动发一次 PAGE_DOWN——
-            // librime 的 Next 耗尽 MakeSentence 翻译流后还会挪 selector
-            // 高亮，composition 直接塌成分段坏态（那'个 →「乙hhpzs'p」，
-            // device + INFO 日志实锤 2026-09-20）。拼音候选多、一两页就
-            // 溢出停止，不受影响。
-            if (this.mode === 'stroke' && this.composing) return;
+            // 笔画组合中不追页（旧壳保留；三个调用点统一在这拦）：旧壳
+            // 追页要发 PAGE_DOWN——librime 的 Next 耗尽 MakeSentence 翻
+            // 译流后还会挪 selector 高亮，composition 直接塌成分段坏态
+            // （那'个 →「乙hhpzs'p」，device + INFO 日志实锤 2026-09-20）。
+            // 新壳（rime-read-only-paging-v1）翻页是只读取数、零副作用，
+            // 禁令解除——同一机制也是 #72 nihlk 第 5 帧丢锚的根因，双拼/
+            // 拼音在旧壳上同样中招（收起条内容窄于视口时每键自动追页）。
+            if (this.mode === 'stroke' && this.composing && !this.readOnlyPaging) return;
             const strip = document.getElementById('expandGrid');
             const bar = document.getElementById('candidates');
             let nearEnd = false;
@@ -9235,6 +9977,37 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
          *  英文占了第一位；各双拼方案映射不同，音节表预判永远追不平，
          *  引擎真值天然适配全拼/双拼/模糊音/自造词）。 */
         englishOrderedPool(pool) {
+            // #81 显式 rank 的钉位符号是显示序的最高优先级：先抽出（不参
+            // 与英文插队），其余按既有规则重排（英文插 target 位），最后
+            // 钉位符号按 rank 升序回插到第 N 可见位——「指定第 3 位」就
+            // 是用户看到的第 3 位，英文自动位给它让路。
+            // 已知边界（review P2-3）：钉位符号在池尾、常用语 exact rank
+            // splice 在头段，正常互不干扰；仅当常用语 rank 钳到池尾（排在
+            // 钉位符号之后）时，尾部抽取会让它左移一位——两功能叠加的边
+            // 缘场景，接受。
+            const ranks = this.symbolRanks || {};
+            const pinOf = item => {
+                const rank = Number(ranks[item && item.text]);
+                return Number.isInteger(rank) && rank >= 1 && rank <= 9
+                    && isSymbolicText(item && item.text) ? rank : 0;
+            };
+            const pinned = [];
+            const plain = [];
+            (Array.isArray(pool) ? pool : []).forEach(item =>
+                (pinOf(item) ? pinned : plain).push(item));
+            const merged = this.englishOrderedPoolInner(plain);
+            if (!pinned.length) return merged;
+            pinned
+                .slice()
+                .sort((a, b) => pinOf(a) - pinOf(b))
+                .forEach(item => {
+                    const at = Math.min(pinOf(item) - 1, merged.length);
+                    merged.splice(at, 0, item);
+                });
+            return merged;
+        }
+
+        englishOrderedPoolInner(pool) {
             const pos = Number(this.englishPos);
             if (!Array.isArray(pool) || !pool.length || pos === 0) return pool;
             // 只在中文输入模式重排：法语/俄语的 accent 变体池头是 ASCII
@@ -9319,7 +10092,14 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
             // exact bar-side version of the grid bug appendExpandedCandidates
             // exists for. Hold and restore across the rebuild.
             const held = bar.scrollLeft || 0;
-            bar.replaceChildren();
+            const ordered = this.englishOrderedPool(this.expandCandidates || []);
+            const labels = ordered.map(candidate =>
+                this.mode === 'french' && this.caseMode && state.composing
+                    ? this.caseifyText(candidate.text) : candidate.text);
+            const existing = Array.from(bar.children);
+            const appendOnly = existing.length <= ordered.length && existing.every((button, i) =>
+                button._poolCandidate === ordered[i] && button.textContent === labels[i]);
+            if (!appendOnly) bar.replaceChildren();
             // 中文联想（docs/design/association.md）：组合为空且无引擎候选时，
             // 候选条展示上屏词的后继联想；组合开始即让位（assocWords 已清）。
             if (!(this.expandCandidates || []).length &&
@@ -9339,11 +10119,12 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
             // the expanded grid scrolls) - native paging must not cap it at
             // one page, and swiping the bar reveals the rest. The first pool
             // entry keeps the highlighted pill.
-            this.englishOrderedPool(this.expandCandidates || []).forEach((candidate, index) => {
+            ordered.forEach((candidate, index) => {
+                if (appendOnly && index < existing.length) return;
                 const button = document.createElement('button');
                 button.className = index === 0 ? 'candidate first' : 'candidate';
-                button.textContent = this.mode === 'french' && this.caseMode && state.composing
-                    ? this.caseifyText(candidate.text) : candidate.text;
+                button.textContent = labels[index];
+                button._poolCandidate = candidate;
                 let longPressed = false;
                 button.addEventListener('click', () => {
                     // A long-press opens the delete menu; the
@@ -9392,13 +10173,24 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
             // 更糟。重输/切模式在各自入口显式作废。
             if (this.pendingPunct) {
                 const pending = this.pendingPunct;
+                // #H 会话失配（codex 评审 P1-1）：hw 来源的两步标点跨了
+                // 编辑器换代——补发作废（迟到标点落新编辑器比缺标点糟）。
+                const staleGen = pending.gen !== undefined && pending.gen !== this.hwGen;
                 const rawChanged = pending.raw !== undefined &&
                     pending.raw !== this.lastRawInput;
                 const stale = Date.now() - pending.at > 3000;
-                if (!this.composing) {
+                if (!this.composing && !staleGen) {
                     this.pendingPunct = null;
-                    this.sendSymbol(pending.text);
-                } else if (rawChanged || stale) {
+                    // #H 第二步补发（codex 复审 P1-1 残余）：hw 来源走
+                    // hwCommit（gen 原生终检——JS 检查与主线程执行之间
+                    // 的编辑器切换由原生执行处兜住）；软键盘路径照旧
+                    // sendSymbol。
+                    if (pending.gen !== undefined && typeof Native.hwCommit === 'function') {
+                        this.call(() => Native.hwCommit(pending.text, pending.gen, this.token));
+                    } else {
+                        this.sendSymbol(pending.text);
+                    }
+                } else if (rawChanged || stale || staleGen) {
                     this.pendingPunct = null;
                 }
             }
@@ -9426,7 +10218,12 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
                     this._t9ConfirmedText = '';
                 }
             }
-            const recording = this.voiceState !== 'idle';
+            // 与 onNativeState 的 recording 同语义（listening/loading/
+            // stopping）：error 态不算语音占用——权限拒绝后 VoiceState 卡
+            // ERROR（无回 idle 事件），旧的 `!== 'idle'` 会把组合中的
+            // composeExpand/composeClear 藏掉（#75：拒绝麦克风权限后
+            // 候选下拉按钮消失，授权走通一次才恢复）。
+            const recording = ['listening', 'loading', 'stopping'].includes(this.voiceState);
             // Composing hides the setup/mode/clipboard tools but never the mic
             // while a voice session is active (the stop entry must survive).
             document.getElementById('setupButton').hidden = this.composing;
@@ -9537,13 +10334,15 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
             this.customEditRow = null;
             this.editorReturn = null;
             this.editorMode = null;
+            this.hwNotifyPanelHeight(); // #H 编辑条拆解后重算高度态
         }
 
         openPanel(tab) {
             if (!this.ready) return;
-            const want = tab === 'favorites' ? 'favorites' : 'clipboard';
+            const want = ['favorites', 'kaomoji'].includes(tab) ? tab : 'clipboard';
             this.panelTab = want;
             this.panelOpen = true;
+            this.hwNotifyPanelHeight(); // #H 面板占满=完整高度
             // 打开/切换面板时撤掉「清空」可能残留的确认态。
             this.armPanelClear(false);
             // Remember the layer to restore on close (panel can open from the
@@ -9582,6 +10381,18 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
             // 会把语音输入等无关图标一并带进面板头，否决。
             this.hideKeyLayers();
             document.getElementById('panelLayer').hidden = false;
+            // #67 定稿：颜文字独立形态——面板头 tabs 让位给横向分类条
+            //（右侧固定 ×），列表区整幅给网格；与剪贴板/常用语 tab 界面解耦。
+            const kaomojiForm = this.panelTab === 'kaomoji';
+            document.querySelector('.panel-tabs').hidden = kaomojiForm;
+            document.getElementById('kaomojiTabs').hidden = !kaomojiForm;
+            // 属性必须真的移除：dataset.x = null 会把属性写成字符串
+            // "null"（WebIDL DOMString 转换），[data-kaomoji] 选择器照样
+            // 命中，#panelList 的颜文字态 display:flex 残留到剪贴板/
+            // 常用语——条目横向挤压成一行（#80 真机截图形态）。
+            const kaomojiAttr = document.getElementById('panelLayer').dataset;
+            if (kaomojiForm) kaomojiAttr.kaomoji = '';
+            else delete kaomojiAttr.kaomoji;
             document.querySelectorAll('[data-panel-tab]').forEach(button => {
                 button.classList.toggle('active', button.dataset.panelTab === this.panelTab);
             });
@@ -9589,7 +10400,50 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
             document.getElementById('panelManage').hidden = this.panelTab !== 'favorites';
             this.renderPanel();
             if (this.panelTab === 'clipboard') Native.getClipboard(this.token);
-            else Native.getFavorites(this.token);
+            else if (this.panelTab === 'favorites') Native.getFavorites(this.token);
+        }
+
+        renderKaomoji() {
+            const list = document.getElementById('panelList');
+            const empty = document.getElementById('panelEmpty');
+            list.replaceChildren();
+            empty.hidden = true;
+            delete document.getElementById('panelLayer').dataset.empty;
+            // 分类条渲染在面板头（#kaomojiTabs，横向滑动），右侧 × 是
+            // panelClose 固定件；列表区只放网格，整幅可用。
+            const chips = document.getElementById('kaomojiTabs');
+            chips.replaceChildren();
+            KAOMOJI_TABS.forEach(cat => {
+                const chip = document.createElement('button');
+                chip.className = 'kaomoji-chip';
+                chip.classList.toggle('active', cat.id === this.kaomojiTab);
+                chip.textContent = t(cat.name);
+                chip.setAttribute('data-i18n', cat.name);
+                chip.addEventListener('click', () => {
+                    this.kaomojiTab = cat.id;
+                    this.renderKaomoji();
+                });
+                chips.append(chip);
+            });
+            const grid = document.createElement('div');
+            grid.className = 'kaomoji-grid';
+            (KAOMOJI_TABS.find(c => c.id === this.kaomojiTab) || KAOMOJI_TABS[0])
+                .items.forEach(text => {
+                    const cell = document.createElement('button');
+                    cell.className = 'kaomoji-cell';
+                    cell.textContent = text;
+                    cell.addEventListener('click', () => {
+                        // 编辑卡开着时面板是取材区（与剪贴板条目同语义）。
+                        if (this.phraseCardOpen()) {
+                            this.fillPhraseCardFromPanel(text);
+                            return;
+                        }
+                        this.call(() => Native.commitText(text, this.token));
+                        this.closePanel();
+                    });
+                    grid.append(cell);
+                });
+            list.append(grid);
         }
 
         closePanel() {
@@ -9599,6 +10453,7 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
             // （setPanelInput）继续有效，不能在这里释放。
             if (this.settingsInputFocus && !this.phraseCardOpen()) this.setPanelInput(false);
             this.panelOpen = false;
+            this.hwNotifyPanelHeight(); // #H 面板收起回落候选条
             document.getElementById('panelLayer').hidden = true;
             document.getElementById('candidateBar').hidden = false;
             // 收尾对账：面板期间任何路径动过工具栏都在这里归位。用
@@ -9629,6 +10484,9 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
         }
 
         renderPanel() {            const list = document.getElementById('panelList');
+            // #67 颜文字 tab：分类 chips + 网格（静态数据，不走剪贴板/
+            // 常用语的条目模型——上屏走 commitText（是输入，进统计）。
+            if (this.panelTab === 'kaomoji') { this.renderKaomoji(); return; }
             const empty = document.getElementById('panelEmpty');
             list.replaceChildren();
             const layer = document.getElementById('panelLayer');
@@ -9737,6 +10595,14 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
             if (changed) {
                 this.panelSession = (this.panelSession || 0) + 1;
                 this.panelSpans = new Map();
+                // 手势快照随会话作废：编辑卡关闭重开是同一批 DOM 元素，
+                // 直接赋值重置的表单不触发 input，不清会把旧前缀写进
+                // 新表单（codex 复审 P1）。
+                if (this.panelSelections) {
+                    for (const field of this.panelSelections.keys()) {
+                        field.__imeDeleteSnapshot = null;
+                    }
+                }
                 this.panelSelections = new Map();
                 this.panelTargets = new Map();
                 this.panelTarget = null;
@@ -9798,6 +10664,7 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
         }
 
         replacePanelRange(field, start, end, text) {
+            field.__imeDeleteSnapshot = null; // 任何面板写入都作废手势快照
             field.value = field.value.slice(0, start) + text + field.value.slice(end);
             const caret = start + text.length;
             try { field.setSelectionRange(caret, caret); } catch (_) {}
@@ -9883,6 +10750,36 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
             if (this.panelPayloadCurrent(payload)) this.deleteFromPanelInput(Number((payload && payload.count) || 1), this.panelPayloadField(payload));
         }
 
+        /** #85 面板输入的上滑删/下滑恢复：面板文字在键盘页自己的
+         *  输入框里，宿主 IC 路径查询不回、DEL 连发逐条 evaluate——
+         *  手势由服务直调这里，同步改字段。快照挂在字段上，任何其它
+         *  面板写入（replacePanelRange）都会清掉它。 */
+        onImeGestureDeleteAll(payload) {
+            const field = this.panelPayloadField(payload);
+            if (!field) return;
+            const start = field.selectionStart;
+            const end = field.selectionEnd;
+            if (start == null || end == null) return; // 无选区能力的输入不做
+            if (start !== end) return; // 选中段：与宿主路径同语义，不动
+            if (start === 0) return;   // 空删 no-op：保留既有快照
+            const snap = field.value.slice(0, start);
+            // 组合区间一并清（deleteFromPanelInput 同款）：手势期间迟到
+            // 的组合回声会让后续提交按陈旧 span 写入、丢尾部（codex
+            // 复审 P1）。
+            if (this.panelSpans) this.panelSpans.delete(field);
+            this.replacePanelRange(field, 0, start, '');
+            field.__imeDeleteSnapshot = snap;
+        }
+
+        onImeGestureRestore(payload) {
+            const field = this.panelPayloadField(payload);
+            if (!field || !field.__imeDeleteSnapshot) return;
+            // 现场校验：光标须仍停在删除后的 0 位且无选区。
+            if (field.selectionStart !== 0 || field.selectionEnd !== 0) return;
+            const snap = field.__imeDeleteSnapshot;
+            this.replacePanelRange(field, 0, 0, snap);
+        }
+
         /** The phrase editor is a card floating ABOVE the
          * keyboard view (band area) - the old
          * in-keyboard strip is gone for the favorites flow. Redirect typing
@@ -9903,6 +10800,7 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
             const input = document.getElementById('phraseCardInput');
             if (!input) return;
             const value = String(text);
+            input.__imeDeleteSnapshot = null; // 直接赋值不触发 input，显式清
             input.value = [...value].slice(0, 200).join('');
             this.rememberPanelSelection(input);
             this.reportPanelSelection();
@@ -9924,6 +10822,12 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
                 item ? t("编辑常用语") : t("添加常用语");
             input.value = item ? item.text : '';
             code.value = (item && item.code) || '';
+            input.__imeDeleteSnapshot = null;
+            code.__imeDeleteSnapshot = null;
+            // 表单（重）开即作废手势快照：编辑卡保持打开时再点「＋添加」
+            // 是 true→true 的输入路由无变化 + 直接赋值不触发 input——
+            // 两条作废通道都不经过，旧前缀会经下滑写进新空表单
+            // （codex round 13 P1，Chromium 复现）。
             document.getElementById('phraseCardRankValue').textContent =
                 String(item ? (item.rank || 1) : 1);
             document.getElementById('panelLayer').hidden = true;
@@ -9943,6 +10847,7 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
             // body.editing keeps the native redirect armed across blurs
             // (review finding) - the card flow keeps that semantics.
             document.body.classList.add('editing');
+            this.hwNotifyPanelHeight(); // #H 常用语编辑卡=完整高度
             card.hidden = false;
             card.classList.add('open');
             this.placePhraseCard();
@@ -9982,6 +10887,7 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
             this.editorMode = null;
             editor.hidden = true;
             document.body.classList.remove('editing');
+            this.hwNotifyPanelHeight(); // #H 编辑收起回落
             if (this.settingsInputFocus) this.setPanelInput(false);
             // Custom-row edits return to their settings page
             // instead of the favorites panel.
@@ -10300,12 +11206,18 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
             if (payload.nativeApiVersion < MIN_NATIVE_API) return;
             const provided = payload.capabilities || [];
             if (!REQUIRED_CAPABILITIES.every(cap => provided.includes(cap))) return;
+            this.inkPredecimated = provided.includes('ink-predecimated-v1');
             // 高度回写覆盖（真机实录 2026-09-27 ace）：弹出早期 hello 未达
             // 时，applyModeHeight 拿不到 native 存值、按默认 272 回推
             // setKeyboardHeight 桥，debounce 把默认值写回 pref——用户刚保存
             // 的高度被无声覆盖（「保存→收起→弹出回旧值」的真凶之一）。
             // hello 到达前一切「按 stored 回推高度」的路径一律不执行。
             this.helloSeen = true;
+            // #72 只读候选通道能力：新壳的候选浏览不再 PAGE_DOWN 挪
+            // selector 高亮（预加载拖走高亮 = stable-seg hint 取到残缺
+            // spans = nihlk 第 5 帧病态）。旧壳缺此能力时保留 stroke
+            // 组合中的追页禁令（2026-09-20 塌组合事故的兼容边界）。
+            this.readOnlyPaging = provided.includes("rime-read-only-paging-v1");
             // 高度保存回执能力（codex 二轮 P2-5）：新壳才有 onHeightSaved
             // 回执——保存提示的兜底策略按能力分流（见保存按钮 handler）。
             this.nativeCaps = provided;
@@ -10337,6 +11249,18 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
                 else if (cf === 2) this.candidateFont = 135;
             }
             this.applyCandidateFont();
+            // 键帽字号（issue #70）：80-150；旧 APK 不带字段不覆盖。
+            {
+                const kf = Number(payload.keycapFont);
+                if (kf >= 50 && kf <= 150) this.keycapFont = kf;
+            }
+            this.applyKeycapFont();
+            // 用户字体（issue #70）：digest 非空 = 导入过；路由 404/损坏时
+            // @font-face 无效，CSS 字体栈逐字回落，功能不受影响。旧 APK 不带
+            // 字段不覆盖。
+            if (typeof payload.userFontDigest === 'string') {
+                this.applyUserFont(payload.userFontDigest);
+            }
             // 拼音字号（issue #8）：0=标准 1=大 2=特大；旧 APK 不带字段不覆盖。
             if (Number(payload.preeditFont) in { 0: 1, 1: 1, 2: 1 }) {
                 this.preeditFont = Number(payload.preeditFont);
@@ -10508,6 +11432,7 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
             this.applyToolbarLayout();
             this.associationOn = !!payload.associationOn;
             this.touchDiagnostics = payload.touchDiagnostics === true;
+            this.syncDiagnosticProbe();
             if (!this.associationOn) this.assocWords = [];
             // 联想让位态退格清联想（issue #46）。
             this.backspaceAssocOn = !!payload.backspaceAssocOn;
@@ -10551,6 +11476,10 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
             if (typeof payload.flickSwap === 'boolean') {
                 this.flickSwap = payload.flickSwap;
                 document.body.classList.toggle('flick-swap', this.flickSwap);
+            }
+            // #63 双击 Shift 锁定大写开关（默认开，无键面视觉，无需 class）。
+            if (typeof payload.doubleShiftLock === 'boolean') {
+                this.doubleShiftLock = payload.doubleShiftLock;
             }
             if (Number(payload.popupSnap) in { 0: 1, 1: 1, 2: 1 }) {
                 this.popupSnap = Number(payload.popupSnap);
@@ -10640,6 +11569,40 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
             const nextMode = MODES[payload.mode] ? payload.mode : 'direct';
             const modeChanged = nextMode !== this.mode;
             this.mode = nextMode;
+            // #H：hello 带硬键盘状态与形态档位（design §5/§7）。
+            this.hardwareKeyboard = !!payload.hardwareKeyboard;
+            // #81 符号词手动位次与词频排序开关（hello 随开关变更重推）。
+            this.symbolRanks = payload.symbolRanks && typeof payload.symbolRanks === 'object'
+                ? payload.symbolRanks : {};
+            this.symbolFreqSort = payload.symbolFreqSort === true;
+            this.hwkbForm = payload.hwkbForm || 'candidates';
+            // #H 快捷切换策略/返回记忆快照（native 是真相源）。hello 未
+            // 带 policy 字段（旧壳或首载迁移未完成）时按存量 localStorage
+            // 配对判定一次并上报（用户裁定 2026-11-05：默认固定配对，
+            // 自配/无配对统一 fixed；原生 pref 才是权威状态源）。
+            if (payload.quickSwitchPolicy !== undefined) {
+                this.quickSwitchPolicy = payload.quickSwitchPolicy;
+                this.quickReturnMode = payload.quickReturnMode || 'pinyin';
+                // 权威字段已到（native pref），迁移判定期就此关闭——
+                // 否则后续不带字段的 hello（测试/旧壳混合序列）会把
+                // 已下发的策略重置回迁移默认。
+                this.quickPolicyMigrated = true;
+            } else if (!this.quickPolicyMigrated) {
+                // 只判定快照；上报在 ready 之后（call 门闸会吞掉
+                // keyboardReady 之前的桥调用——#27 同款时序坑）。
+                this.quickPolicyMigrated = true;
+                this.quickSwitchPolicy = 'fixed';
+                this.quickPolicyReportPending = true;
+            }
+            // #H 会话代数（codex 评审 P1-1）：重载/换页后以 native 当前
+            // gen 为基准——旧 gen 的队列/续步全部作废。
+            if (payload.hwGen !== undefined) this.hwGen = Number(payload.hwGen) || 0;
+            // #H 水位起点（codex 评审 P1-7）：native 的 hwDoneSeq 跨页
+            // 只增不减；新页计数器以此起步，否则前 N 条命令被旧水位
+            // 伪解除（屏障失效）。
+            const seqBase = Number(payload.hwSeqBase) || 0;
+            if (seqBase > (this.hwSeqCounter || 0)) this.hwSeqCounter = seqBase;
+            this.applyHwForm();
             // 先于 renderMode：切换键的键面（快捷切换目标简写）读的就是
             // 迁移后的对。
             this.adoptQuickPairForHandwriting(nextMode);
@@ -10680,6 +11643,10 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
             const nextKbLayout = payload.kbLayout === '14' ? '14' : '26';
             const kbLayoutChanged = nextKbLayout !== this.kbLayout;
             this.kbLayout = nextKbLayout;
+            // #87：hello 是 selectMode（工具栏面板/快捷对翻对/设置页）的
+            // 统一回推路径——这里确定性刷新候选条形态的快捷切换键，
+            // adoptQuickPair 之后的 quickPair 已是新对（cn-sub 目标准确）。
+            this.updateHwModeTag();
             if (modeChanged) this.renderMode();
             else if (kbLayoutChanged && MERGEABLE_14.has(this.mode)) {
                 this.renderMode();
@@ -10711,6 +11678,39 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
                 if (document.getElementById('heightCard').classList.contains('open')) this.renderHeightCard();
             }
             Native.keyboardReady(KEYBOARD_VERSION, MIN_NATIVE_API, JSON.stringify(REQUIRED_CAPABILITIES), this.token);
+            // #H 快捷切换策略首载迁移上报（codex 二轮 §2.5）：hello 不带
+            // policy（旧壳/未迁移）时按存量配对判定一次并上报 native——
+            // 必须排在 keyboardReady 之后（pageReady 门闸）。
+            if (this.quickPolicyReportPending) {
+                this.quickPolicyReportPending = false;
+                if (typeof Native.setQuickSwitchPolicy === 'function') {
+                    this.call(() => Native.setQuickSwitchPolicy(this.quickSwitchPolicy, this.token));
+                }
+            }
+            // #H：硬键能力上报（design §6）——必须排在 keyboardReady 之后
+            //（#27 同款时序坑：native pageReady 在 keyboardReady 处理器里
+            // 才置位，早于此的桥调用必被门闸吞掉）。codex 评审 P1-8：只在
+            // 「本页已见过引擎状态」时立即报——首报必须由首个有效 state
+            // 驱动（见 onEngineState 包装层），保证接管时池/组合非空
+            //（native 侧 keyboardReady 重推状态快照成全这一时序）。重握手
+            // （mode 切换触发的 hello 重推复位 native pageReady/jsHwKeys）
+            // 时本页 state 一直活着，立即补报不回退 a733426 的幂等语义。
+            if (typeof Native.reportHwKeys === 'function' && this.hwStateSeen) {
+                this.hwReported = true;
+                this.call(() => Native.reportHwKeys(1, this.token));
+            } else if (typeof Native.reportHwKeys === 'function') {
+                // 冷启动宽限（AVD 实测定罪）：direct 模式冷启动零引擎事件
+                // ——首个 state 永不到达，硬键能力上报死锁（Ctrl+空格
+                // notReady）。300ms 内到达的首个 state 仍走包装层上报
+                // （重载场景 native 的快照重推即到）；到不了就补报——
+                // 从未有过状态=无旧池可 stale，立即接管语义安全。
+                setTimeout(() => {
+                    if (!this.hwReported) {
+                        this.hwReported = true;
+                        this.call(() => Native.reportHwKeys(1, this.token));
+                    }
+                }, 300);
+            }
             // #27 补推（评审 P1）：hello handler 里 applyBackground 早于
             // keyboardReady，首推 pushChromeColor 必被 native 的 !pageReady
             // 门闸吞掉；此刻 pageReady 已置位，补一次不再依赖二次 hello。
@@ -10736,7 +11736,12 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
          * but never toasts (degradedActive absent); each degrade transition
          * carries a fresh seq so a retry that fails again toasts again. */
         applyEngineLifecycle(payload) {
-            if (payload.warming !== undefined) this.warming = !!payload.warming;
+            if (payload.warming !== undefined
+                && this.warming !== !!payload.warming) {
+                // #82 验收：记录 warming 起始时刻，状态条 800ms 闪现门槛用。
+                this.warming = !!payload.warming;
+                this.warmingSince = this.warming ? Date.now() : 0;
+            }
             if (payload.degraded) {
                 const seq = Number(payload.degradeSeq) || 0;
                 const failedMode = payload.failedMode || '';
@@ -10796,21 +11801,40 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
         }
 
         /** Warming wins over degraded: while language data is still
-         * preparing (including a user-initiated retry of the failed mode),
-         * that is the actionable state — the degrade text would keep telling
-         * the user to retry a retry already running. */
+         *  preparing (including a user-initiated retry of the failed mode),
+         *  that is the actionable state — the degrade text would keep telling
+         *  the user to retry a retry already running.
+         *  #82 验收：模式切换触发的 warming 是亚秒级闪现，状态条跟着闪
+         *  一下没有任何信息量（用户验收吐槽）。延迟 800ms 显示：闪过的不
+         *  出现，首装/换基底词库的真编译（持续数秒以上）照常给解释——
+         *  那是唯一能说明「键盘为什么没词」的状态。 */
         updateEngineStatus() {
             const el = document.getElementById('engineStatus');
             if (!el) return;
             const degradedActive = !!(this.degrade && this.degrade.active);
             const candidates = document.getElementById('candidates');
+            clearTimeout(this.warmingShowTimer);
+            this.warmingShowTimer = null;
+            const showNow = degradedActive
+                || (!!this.warming && Date.now() - (this.warmingSince || 0) >= 800);
             // The status strip takes the candidate bar's slot while visible:
             // both flex:1 side by side would squeeze each other and clip the
             // message instead (keyboard.css #engineStatus).
-            if (candidates) candidates.hidden = !!(this.warming || degradedActive);
+            // #82 让位与文案同门槛（showNow）：warming 短脉冲若立即 hidden
+            // 候选占位，flex:1 塌掉→右侧工具瞬间贴到左侧再弹回（切换输入法
+            // 时肉眼可见的整排 icon 抖动）。门槛内布局纹丝不动。
+            if (candidates) candidates.hidden = showNow;
             if (this.warming) {
                 el.textContent = t("正在准备语言数据…");
-                el.hidden = false;
+                if (showNow) {
+                    el.hidden = false;
+                } else {
+                    // 闪现门槛内：先藏住；800ms 后仍在 warming 再亮出。
+                    el.hidden = true;
+                    this.warmingShowTimer = setTimeout(() => {
+                        if (this.warming) this.updateEngineStatus();
+                    }, Math.max(0, 800 - (Date.now() - (this.warmingSince || 0))));
+                }
             } else if (degradedActive) {
                 const modeName = MODES[this.degrade.failedMode]
                     ? t(MODES[this.degrade.failedMode].title) : this.degrade.failedMode;
@@ -10854,8 +11878,14 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
             // Engine lifecycle (warming / degraded) is consumed BEFORE the
             // variantReplaying early-return below — a replay in flight must
             // never swallow a degrade or recovery notice (mode-fallback §2.3).
-            if (payload.phase === 'LOADING') this.warming = true;
-            if (payload.phase === 'READY' && !payload.composing) this.warming = false;
+            if (payload.phase === 'LOADING' && !this.warming) {
+                this.warming = true;
+                this.warmingSince = Date.now();
+            }
+            if (payload.phase === 'READY' && !payload.composing) {
+                this.warming = false;
+                this.warmingSince = 0;
+            }
             if (payload.degraded !== undefined) this.applyEngineLifecycle(payload);
             else if (payload.phase === 'LOADING' || payload.phase === 'READY' || this.degrade) {
                 this.updateEngineStatus();
@@ -10884,8 +11914,10 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
             if (this.variantReplaying) return;
             if (payload.mode && MODES[payload.mode] && payload.mode !== this.mode) {
                 this.mode = payload.mode;
+                this.applyHwForm(); // #H 模式变化重评估候选条形态
                 this.adoptQuickPairForHandwriting(payload.mode);
                 this.renderMode();
+                this.updateHwModeTag();
             }
             this.updateComposing(payload, payload.rawInput || payload.composing || '');
             // ONE accumulated pool feeds both the candidate bar and
@@ -10991,11 +12023,16 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
             }
         }
 
+        onVoiceLevel(level) {
+            document.querySelector('#levelBar i').style.transform = `scaleX(${Math.max(0, Math.min(1, level || 0))})`;
+        }
+
         onNativeState(payload) {
             this.voiceState = payload.state || 'idle';
             if (this.voiceState === 'idle' || this.voiceState === 'error') {
                 this.voiceSession = null;
             }
+            this.hwNotifyPanelHeight(); // #H 语音遮罩=完整高度
             const overlay = document.getElementById('voiceOverlay');
             const recording = ['listening', 'loading', 'stopping'].includes(this.voiceState);
             overlay.classList.toggle('open', recording);
@@ -11022,7 +12059,7 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
                 document.getElementById('voiceStatus').textContent = payload.message;
             }
             document.getElementById('partialText').textContent = payload.partial || '';
-            document.querySelector('#levelBar i').style.transform = `scaleX(${Math.max(0, Math.min(1, payload.level || 0))})`;
+            this.onVoiceLevel(payload.level);
             const mic = document.getElementById('mic');
             // the mic is a fixed SVG icon; only classes/colours change.
             if (mic) mic.className = 'tool' + (this.voiceState === 'idle' ? '' : ' ' + this.voiceState);
@@ -11144,6 +12181,8 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
         try {
             keyboard.swapThemeGlyph(theme);
             keyboard.applyBackground();
+            keyboard._inkColor = keyboard.inkColor();
+            keyboard.inkPaint();
         } catch (_) { /* pre-init */ }
     }
     function cycleTheme() {
@@ -11188,14 +12227,34 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
         onEngineState: payload => {
             window.__diagStates = (window.__diagStates || 0) + 1;
             window.__diagRev = payload && payload.revision;
-            try { return keyboard.onEngineState(payload); }
+            // #H 硬件键盘：包装层驱动（onEngineState 方法体有 variant
+            // 早退等多个出口，queue 驱动必须看到每一条回声——包括
+            // 早退的。pendingPunct 的补发清理在方法体内完成后，这里
+            // 的 drain 才能评估跨步屏障。
+            keyboard.hwDoneSeq = Math.max(keyboard.hwDoneSeq || 0, (payload && payload.hwDoneSeq) || 0);
+            // #H（codex 评审 P1-8）：首个有效 state 驱动能力上报——接管
+            // 时池/组合非空（design §6）。
+            if (!keyboard.hwStateSeen) {
+                keyboard.hwStateSeen = true;
+                if (!keyboard.hwReported && typeof Native.reportHwKeys === 'function') {
+                    keyboard.hwReported = true;
+                    keyboard.call(() => Native.reportHwKeys(1, keyboard.token));
+                }
+            }
+            try { const r = keyboard.onEngineState(payload); keyboard.hwDrain(); return r; }
             catch (e) { window.__diagErr = String(e && e.message || e).slice(0, 60); throw e; }
         },
         onAssoc: payload => keyboard.onAssoc(payload),
         onNativeState: payload => keyboard.onNativeState(payload),
+        onVoiceLevel: level => keyboard.onVoiceLevel(level),
         onInkCandidates: payload => keyboard.onInkCandidates(payload),
         onEditorInfo: payload => keyboard.onEditorInfo(payload),
         cancelTouches: () => keyboard.cancelTouches(),
+        // #H 硬件键盘：native 全认领后的注入入口（design §1/§4.1）。
+        hwKey: (kind, value, gen) => keyboard.hwEnqueue(kind, value, gen),
+        // #H 会话换代（native onStartInput 驱动，codex 复审 P1-1）。
+        hwSessionReset: gen => keyboard.hwSessionReset(gen),
+        quickPairToggle: () => keyboard.toggleChineseEnglish(),
         // #48 编辑器换代作废在途定制宏链（native onStartInput 驱动）。
         cancelCustomChain: () => keyboard.cancelCustomChain(),
         cancelToolbarEdit: () => keyboard.cancelToolbarEdit(),
@@ -11206,6 +12265,8 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
         onStoresRestored: stores => keyboard.onStoresRestored(stores),
         onPanelCommit: payload => keyboard.onPanelCommit(payload),
         onPanelDelete: payload => keyboard.onPanelDelete(payload),
+        onImeGestureDeleteAll: payload => keyboard.onImeGestureDeleteAll(payload),
+        onImeGestureRestore: payload => keyboard.onImeGestureRestore(payload),
         onPanelComposing: payload => keyboard.onPanelComposing(payload),
         onPanelFinishComposing: payload => keyboard.onPanelFinishComposing(payload),
         onPanelReopen: payload => keyboard.onPanelReopen(payload),
@@ -11242,7 +12303,16 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
             owner: keyboard.popup?.fingerId ?? null,
             ids: Array.from(keyboard.pressById.keys()).slice(0, 12),
             press: keyboard.pressedKeys.size,
+            epoch: keyboard.touchEpoch,
         }),
+        // allUp 治理的注入入口（带代际守卫）：audit 查询时的 epoch 与
+        // 实际执行时不等 = 查询后又有新按下（evaluateJavascript 异步
+        // 落地窗口）——放弃清理，绝不清正在进行的按压。
+        cancelTouchesEpochGuard: epoch => {
+            if (keyboard.touchEpoch !== epoch) return 'skipped';
+            keyboard.cancelTouches();
+            return 'cleared';
+        },
         // Read-only automation probe (device gates): the keyboard instance is
         // a closure, so gates cannot reach runtime fields without this.
         debugState: () => ({
@@ -11296,6 +12366,7 @@ const TOOLBAR_DEFAULT = { left: ['ctrl', 'ime'], right: ['clipboard', 'favorites
         // Suite/preview hook (issue #28 round-2): the ink delay setting and
         // the recognition-path smoother, for unit tests and preview probes.
         inkSmooth: points => smoothInkStroke(points),
+        inkDecimate: strokes => decimateInkStrokes(strokes),
         // Preview/suite hook (issue #8): switch the preedit font level
         // without a native hello round-trip.
         setPreeditFont: level => {
